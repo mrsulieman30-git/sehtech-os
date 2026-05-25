@@ -45,6 +45,8 @@ Route::middleware(['auth'])->group(function () {
     Route::prefix('api/admin')->group(function () {
         Route::get('/users', [\App\Http\Controllers\Api\AdminController::class, 'index'])->name('api.admin.users.index');
         Route::post('/users', [\App\Http\Controllers\Api\AdminController::class, 'store'])->name('api.admin.users.store');
+        Route::put('/users/{id}', [\App\Http\Controllers\Api\AdminController::class, 'update'])->name('api.admin.users.update');
+        Route::delete('/users/{id}', [\App\Http\Controllers\Api\AdminController::class, 'destroy'])->name('api.admin.users.destroy');
         Route::get('/roles', [\App\Http\Controllers\Api\AdminController::class, 'getRoles'])->name('api.admin.roles.index');
         Route::post('/roles', [\App\Http\Controllers\Api\AdminController::class, 'storeRole'])->name('api.admin.roles.store');
         Route::put('/roles/{id}', [\App\Http\Controllers\Api\AdminController::class, 'updateRole'])->name('api.admin.roles.update');
@@ -107,6 +109,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/dashboard', [\App\Http\Controllers\Api\LegalController::class, 'getDashboard'])->name('api.legal.dashboard');
         Route::post('/contracts/generate', [\App\Http\Controllers\Api\LegalController::class, 'generateContractDraft'])->name('api.legal.contracts.generate');
         Route::post('/risks', [\App\Http\Controllers\Api\LegalController::class, 'storeRisk'])->name('api.legal.risks.store');
+        Route::put('/contracts/{id}', [\App\Http\Controllers\Api\LegalController::class, 'updateContract'])->name('api.legal.contracts.update');
     });
 
     Route::prefix('api/finance')->group(function () {
@@ -134,6 +137,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/metadata', [\App\Http\Controllers\Api\HrController::class, 'getMetadata'])->name('api.hr.metadata');
         Route::post('/employees', [\App\Http\Controllers\Api\HrController::class, 'storeEmployee'])->name('api.hr.employees.store');
         Route::get('/employees/{id}', [\App\Http\Controllers\Api\HrController::class, 'getEmployee'])->name('api.hr.employees.show');
+        Route::put('/employees/{id}', [\App\Http\Controllers\Api\HrController::class, 'updateEmployee'])->name('api.hr.employees.update');
+        Route::delete('/employees/{id}', [\App\Http\Controllers\Api\HrController::class, 'destroyEmployee'])->name('api.hr.employees.destroy');
         Route::put('/employees/{id}/terminate', [\App\Http\Controllers\Api\HrController::class, 'terminateEmployee'])->name('api.hr.employees.terminate');
         Route::put('/employees/{id}/salary', [\App\Http\Controllers\Api\HrController::class, 'updateEmployeeSalary'])->name('api.hr.employees.salary');
         Route::post('/leave', [\App\Http\Controllers\Api\HrController::class, 'storeLeaveRequest'])->name('api.hr.leave.store');
@@ -168,9 +173,18 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/events', [\App\Http\Controllers\Api\CalendarController::class, 'getEvents'])->name('api.calendar.events');
         Route::post('/meetings', [\App\Http\Controllers\Api\CalendarController::class, 'storeMeeting'])->name('api.calendar.meetings.store');
     });
-});
 
-    Route::prefix('api/ai')->group(function () {
-        Route::post('/master-chat', [\App\Http\Controllers\Api\AgentController::class, 'masterChat'])->name('api.ai.master-chat');
+    Route::prefix('api/agents')->group(function () {
+        Route::post('/{agentId}/chat', [\App\Http\Controllers\Api\AgentController::class, 'chat'])->name('api.agents.chat');
     });
 
+    // Global AI routes
+    Route::prefix('api/agents')->group(function () {
+        Route::post('/master-chat', [\App\Http\Controllers\Api\AgentController::class, 'masterChat'])->name('api.ai.master-chat');
+        Route::get('/master-chat/history', [\App\Http\Controllers\Api\AgentController::class, 'getMasterChatHistory'])->name('api.ai.master-chat.history');
+    });
+
+    Route::prefix('api/internal')->group(function () {
+        Route::post('/agent-action', [\App\Http\Controllers\Api\AgentActionController::class, 'execute'])->withoutMiddleware(['auth'])->name('api.internal.agent-action');
+    });
+});

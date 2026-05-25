@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, onMounted, nextTick } from 'vue';
 import { 
     PhRobot, PhCpu, PhDatabase, PhPaperPlaneRight, 
     PhBrain, PhNetwork
 } from '@phosphor-icons/vue';
 import axios from 'axios';
+import RichMessageRenderer from '@/Components/Ai/RichMessageRenderer.vue';
 
 const message = ref('');
 const chatHistory = ref([
@@ -12,6 +13,23 @@ const chatHistory = ref([
 ]);
 
 const isTyping = ref(false);
+
+const fetchHistory = async () => {
+    try {
+        const response = await axios.get('/api/agents/master-chat/history');
+        if (response.data.history && response.data.history.length > 0) {
+            chatHistory.value = response.data.history;
+        }
+    } catch (error) {
+        console.error('Failed to load chat history', error);
+    }
+};
+
+onMounted(() => {
+    fetchHistory();
+});
+
+
 
 const sendMessage = async () => {
     if (!message.value.trim()) return;
@@ -22,7 +40,7 @@ const sendMessage = async () => {
     isTyping.value = true;
     
     try {
-        const response = await axios.post('/api/ai/master-chat', {
+        const response = await axios.post('/api/agents/master-chat', {
             message: userMessage,
             history: chatHistory.value.slice(0, -1) // Send all history except the latest message
         });
@@ -98,10 +116,11 @@ const sendMessage = async () => {
                     :class="msg.role === 'user' ? 'justify-end' : 'justify-start'"
                 >
                     <div 
-                        class="max-w-[70%] p-4 rounded-xl text-[14px] leading-relaxed shadow-sm"
-                        :class="msg.role === 'user' ? 'bg-dept-ai-main text-white rounded-tr-sm' : 'bg-white border border-shell-border text-text-primary rounded-tl-sm'"
+                        class="max-w-[85%] p-4 rounded-xl text-[14px] leading-relaxed shadow-sm overflow-hidden"
+                        :class="msg.role === 'user' ? 'bg-dept-ai-main text-white rounded-tr-sm' : 'bg-white border border-shell-border text-text-primary rounded-tl-sm w-full max-w-[800px]'"
                     >
-                        {{ msg.content }}
+                        <RichMessageRenderer v-if="msg.role === 'assistant'" :content="msg.content" />
+                        <div v-else :dir="/[\u0600-\u06FF]/.test(msg.content) ? 'rtl' : 'ltr'" :class="/[\u0600-\u06FF]/.test(msg.content) ? 'font-arabic' : ''">{{ msg.content }}</div>
                     </div>
                 </div>
                 

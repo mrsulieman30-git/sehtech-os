@@ -4,12 +4,15 @@ import axios from 'axios';
 import { 
     PhUsers, PhIdentificationBadge, PhCalendarCheck, PhChartPieSlice, 
     PhPlus, PhMagnifyingGlass, PhCheckCircle, PhXCircle, PhRobot,
-    PhMoney, PhStar, PhEye, PhCurrencyDollar, PhArrowRight
+    PhMoney, PhStar, PhEye, PhCurrencyDollar, PhArrowRight,
+    PhPencilSimple, PhTrash
 } from '@phosphor-icons/vue';
 import dayjs from 'dayjs';
 import { useModalStore } from '@/Stores/useModalStore';
+import RichMessageRenderer from '@/Components/Ai/RichMessageRenderer.vue';
 
 const modalStore = useModalStore();
+const showMobileAi = ref(false);
 
 interface Employee {
     id: string; name: string; email: string; avatar: string | null;
@@ -37,6 +40,14 @@ const fetchDashboard = async () => {
         employees.value = response.data.employees;
         leaveRequests.value = response.data.leave_requests;
         metrics.value = response.data.metrics;
+        
+        // Dynamically update HR Nexus Agent welcome message with live data
+        if (chatMessages.value.length === 1 && chatMessages.value[0].role === 'assistant') {
+            chatMessages.value[0].content = `I noticed ${metrics.value.total_employees} active employees in the system with a total payroll of <strong>${formatCurrency(metrics.value.total_annual_payroll)}</strong>/year. ` + 
+                (metrics.value.pending_requests > 0 
+                    ? `There are <strong class="text-amber-600">${metrics.value.pending_requests} pending leave requests</strong> awaiting your review.` 
+                    : 'All leave requests are up to date! ✅');
+        }
     } catch (error) {
         console.error('Failed to fetch HR data', error);
     }
@@ -73,8 +84,63 @@ const openEmployeeProfile = (id: string) => {
     modalStore.openModal('view-employee', { userId: id });
 };
 
+const deleteEmployee = async (employee: Employee) => {
+    if (!confirm(`Are you sure you want to permanently delete ${employee.name}?`)) return;
+    try {
+        await axios.delete(`/api/hr/employees/${employee.id}`);
+        fetchDashboard();
+        window.dispatchEvent(new CustomEvent('refresh-finance-dashboard'));
+    } catch (e) {
+        console.error('Failed to delete employee', e);
+    }
+};
+
 const openPerformanceReview = (employee: Employee) => {
     modalStore.openModal('record-performance', { userId: employee.id, userName: employee.name });
+};
+
+// HR Nexus Agent Chat logic
+const chatMessage = ref('');
+const chatMessages = ref<{ role: string; content: string }>([
+    {
+        role: 'assistant',
+        content: 'Connecting to HR Nexus...'
+    }
+]);
+const isChatTyping = ref(false);
+const chatScrollContainer = ref<HTMLElement | null>(null);
+
+const scrollToBottom = () => {
+    setTimeout(() => {
+        if (chatScrollContainer.value) {
+            chatScrollContainer.value.scrollTop = chatScrollContainer.value.scrollHeight;
+        }
+    }, 50);
+};
+
+const sendChatMessage = async () => {
+    if (!chatMessage.value.trim() || isChatTyping.value) return;
+    
+    const userMsg = chatMessage.value;
+    chatMessages.value.push({ role: 'user', content: userMsg });
+    chatMessage.value = '';
+    isChatTyping.value = true;
+    scrollToBottom();
+    
+    try {
+        const response = await axios.post('/api/agents/hr-agent/chat', {
+            message: userMsg
+        });
+        chatMessages.value.push({ role: 'assistant', content: response.data.response_text });
+    } catch (e) {
+        chatMessages.value.push({ 
+            role: 'assistant', 
+            content: 'HR Nexus is currently offline. Please ensure the AI service is running.' 
+        });
+    } finally {
+        isChatTyping.value = false;
+        scrollToBottom();
+    }
 };
 
 onMounted(() => {
@@ -88,19 +154,19 @@ onUnmounted(() => {
 </script>
 
 <template>
-    <div class="h-full flex flex-row bg-shell-panel text-text-primary overflow-hidden font-sans">
+    <div class="h-full flex flex-col lg:flex-row bg-shell-panel text-text-primary overflow-hidden font-sans relative">
         
         <!-- Sidebar Nav -->
-        <div class="w-[240px] flex-shrink-0 border-r border-shell-border bg-shell-panel flex flex-col h-full">
-            <div class="h-[56px] flex items-center px-6 border-b border-shell-border bg-white shrink-0 gap-3">
+        <div class="w-full lg:w-[240px] flex-shrink-0 border-b lg:border-b-0 lg:border-r border-shell-border bg-shell-panel flex flex-col lg:h-full z-20">
+            <div class="h-[48px] lg:h-[56px] flex items-center px-4 lg:px-6 border-b border-shell-border bg-white shrink-0 gap-3">
                 <PhUsers :size="24" class="text-dept-hr-main" weight="fill" />
                 <h2 class="text-[15px] font-bold text-text-primary">People & HR</h2>
             </div>
             
-            <div class="flex-1 overflow-y-auto p-3 flex flex-col gap-1">
+            <div class="flex-none lg:flex-1 overflow-x-auto lg:overflow-y-auto p-2 lg:p-3 flex flex-row lg:flex-col gap-1 whitespace-nowrap scrollbar-hide">
                 <button 
                     @click="activeTab = 'directory'"
-                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-btn text-[13px] font-medium transition-colors border-0 bg-transparent cursor-pointer"
+                    class="w-auto lg:w-full flex items-center gap-2 lg:gap-3 px-3 py-2 lg:py-2.5 rounded-btn text-[13px] font-medium transition-colors border-0 bg-transparent cursor-pointer"
                     :class="activeTab === 'directory' ? 'bg-dept-hr-main/10 text-dept-hr-main' : 'text-text-secondary hover:bg-shell-border/50'"
                 >
                     <PhIdentificationBadge :size="18" :weight="activeTab === 'directory' ? 'fill' : 'regular'" />
@@ -108,20 +174,20 @@ onUnmounted(() => {
                 </button>
                 <button 
                     @click="activeTab = 'leave'"
-                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-btn text-[13px] font-medium transition-colors justify-between border-0 bg-transparent cursor-pointer"
+                    class="w-auto lg:w-full flex items-center gap-2 lg:gap-3 px-3 py-2 lg:py-2.5 rounded-btn text-[13px] font-medium transition-colors justify-between border-0 bg-transparent cursor-pointer"
                     :class="activeTab === 'leave' ? 'bg-dept-hr-main/10 text-dept-hr-main' : 'text-text-secondary hover:bg-shell-border/50'"
                 >
-                    <div class="flex items-center gap-3">
+                    <div class="flex items-center gap-2 lg:gap-3">
                         <PhCalendarCheck :size="18" :weight="activeTab === 'leave' ? 'fill' : 'regular'" />
                         Time Off
                     </div>
-                    <span v-if="metrics.pending_requests > 0" class="bg-state-warning text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold">
+                    <span v-if="metrics.pending_requests > 0" class="ml-2 bg-state-warning text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold">
                         {{ metrics.pending_requests }}
                     </span>
                 </button>
                 <button 
                     @click="activeTab = 'performance'"
-                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-btn text-[13px] font-medium transition-colors border-0 bg-transparent cursor-pointer"
+                    class="w-auto lg:w-full flex items-center gap-2 lg:gap-3 px-3 py-2 lg:py-2.5 rounded-btn text-[13px] font-medium transition-colors border-0 bg-transparent cursor-pointer"
                     :class="activeTab === 'performance' ? 'bg-dept-hr-main/10 text-dept-hr-main' : 'text-text-secondary hover:bg-shell-border/50'"
                 >
                     <PhChartPieSlice :size="18" :weight="activeTab === 'performance' ? 'fill' : 'regular'" />
@@ -129,7 +195,7 @@ onUnmounted(() => {
                 </button>
                 <button 
                     @click="activeTab = 'payroll'"
-                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-btn text-[13px] font-medium transition-colors border-0 bg-transparent cursor-pointer"
+                    class="w-auto lg:w-full flex items-center gap-2 lg:gap-3 px-3 py-2 lg:py-2.5 rounded-btn text-[13px] font-medium transition-colors border-0 bg-transparent cursor-pointer"
                     :class="activeTab === 'payroll' ? 'bg-dept-hr-main/10 text-dept-hr-main' : 'text-text-secondary hover:bg-shell-border/50'"
                 >
                     <PhCurrencyDollar :size="18" :weight="activeTab === 'payroll' ? 'fill' : 'regular'" />
@@ -138,7 +204,7 @@ onUnmounted(() => {
             </div>
 
             <!-- Sidebar Quick Stats -->
-            <div class="p-3 border-t border-shell-border space-y-2 shrink-0">
+            <div class="hidden lg:block p-3 border-t border-shell-border space-y-2 shrink-0">
                 <div class="px-3 py-2 bg-white rounded-lg border border-shell-border">
                     <div class="text-[10px] font-bold text-text-disabled uppercase">Headcount</div>
                     <div class="text-[18px] font-black text-text-primary">{{ metrics.total_employees }}</div>
@@ -151,9 +217,9 @@ onUnmounted(() => {
         </div>
 
         <!-- Main Content -->
-        <div class="flex-1 flex flex-col h-full bg-[#F8FAFC] overflow-hidden border-r border-shell-border">
+        <div class="flex-1 flex flex-col h-full bg-[#F8FAFC] overflow-hidden border-r-0 lg:border-r border-shell-border z-10">
             <!-- Top Bar -->
-            <div class="h-[56px] bg-white border-b border-shell-border flex items-center px-6 shrink-0 justify-between">
+            <div class="h-[56px] bg-white border-b border-shell-border flex items-center px-4 lg:px-6 shrink-0 justify-between gap-2 overflow-x-auto hide-scrollbar">
                 <div class="relative w-64">
                     <PhMagnifyingGlass :size="16" class="absolute left-3 top-1/2 -translate-y-1/2 text-text-disabled" />
                     <input 
@@ -163,17 +229,17 @@ onUnmounted(() => {
                         class="w-full pl-9 pr-4 py-1.5 bg-shell-panel border border-shell-border rounded-input text-[13px] focus:ring-1 focus:ring-dept-hr-main outline-none transition-all"
                     />
                 </div>
-                <div class="flex gap-2">
-                    <button @click="modalStore.openModal('request-leave')" class="flex items-center gap-2 px-4 py-1.5 bg-white border border-shell-border text-text-secondary text-[13px] font-medium rounded-btn hover:bg-shell-panel transition-colors cursor-pointer">
+                <div class="flex gap-2 flex-shrink-0">
+                    <button @click="modalStore.openModal('request-leave')" class="flex items-center gap-2 px-3 lg:px-4 py-1.5 bg-white border border-shell-border text-text-secondary text-[12px] lg:text-[13px] font-medium rounded-btn hover:bg-shell-panel transition-colors cursor-pointer whitespace-nowrap">
                         <PhCalendarCheck :size="16" /> Request Leave
                     </button>
-                    <button @click="modalStore.openModal('onboard-employee')" class="flex items-center gap-2 px-4 py-1.5 bg-dept-hr-main text-white text-[13px] font-medium rounded-btn hover:bg-[#06b6d4] transition-colors shadow-sm border-0 cursor-pointer">
-                        <PhPlus :size="16" weight="bold" /> Onboard Employee
+                    <button @click="modalStore.openModal('onboard-employee')" class="flex items-center gap-2 px-3 lg:px-4 py-1.5 bg-dept-hr-main text-white text-[12px] lg:text-[13px] font-medium rounded-btn hover:bg-[#06b6d4] transition-colors shadow-sm border-0 cursor-pointer whitespace-nowrap">
+                        <PhPlus :size="16" weight="bold" /> Onboard
                     </button>
                 </div>
             </div>
 
-            <div class="flex-1 overflow-y-auto p-6">
+            <div class="flex-1 overflow-y-auto p-4 lg:p-6 pb-20 lg:pb-6">
 
                 <!-- ═══════════════ DIRECTORY TAB ═══════════════ -->
                 <template v-if="activeTab === 'directory'">
@@ -198,12 +264,18 @@ onUnmounted(() => {
                             <p class="text-[12px] text-text-secondary mt-1">{{ employee.job_title }}</p>
                             <span class="mt-1 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-100 text-text-disabled">{{ formatEmploymentType(employee.employment_type) }}</span>
                             
-                            <div class="mt-4 pt-3 border-t border-shell-border w-full flex justify-center gap-4">
+                            <div class="mt-4 pt-3 border-t border-shell-border w-full flex justify-center gap-3">
                                 <button @click.stop="openEmployeeProfile(employee.id)" class="hover:text-dept-hr-main transition-colors text-[12px] font-medium text-text-disabled flex items-center gap-1 bg-transparent border-0 cursor-pointer">
                                     <PhEye :size="13" /> Profile
                                 </button>
+                                <button @click.stop="modalStore.openModal('edit-employee', { userId: employee.id })" class="hover:text-blue-500 transition-colors text-[12px] font-medium text-text-disabled flex items-center gap-1 bg-transparent border-0 cursor-pointer">
+                                    <PhPencilSimple :size="13" /> Edit
+                                </button>
                                 <button @click.stop="openPerformanceReview(employee)" class="hover:text-amber-500 transition-colors text-[12px] font-medium text-text-disabled flex items-center gap-1 bg-transparent border-0 cursor-pointer">
                                     <PhStar :size="13" /> Review
+                                </button>
+                                <button @click.stop="deleteEmployee(employee)" class="hover:text-red-500 transition-colors text-[12px] font-medium text-text-disabled flex items-center gap-1 bg-transparent border-0 cursor-pointer">
+                                    <PhTrash :size="13" /> Delete
                                 </button>
                             </div>
                         </div>
@@ -220,8 +292,8 @@ onUnmounted(() => {
                     <h3 class="text-[14px] font-bold text-text-primary mb-4">Leave Management</h3>
 
                     <!-- All leave requests table -->
-                    <div class="bg-white rounded-card border border-shell-border shadow-sm overflow-hidden">
-                        <table class="w-full">
+                    <div class="bg-white rounded-card border border-shell-border shadow-sm overflow-hidden overflow-x-auto">
+                        <table class="w-full min-w-[600px]">
                             <thead>
                                 <tr class="bg-slate-50 text-[11px] font-bold text-text-disabled uppercase">
                                     <th class="text-left px-4 py-3">Employee</th>
@@ -379,8 +451,21 @@ onUnmounted(() => {
             </div>
         </div>
 
-        <!-- Right Sidebar -->
-        <div class="w-[320px] flex-shrink-0 bg-white flex flex-col h-full z-10">
+        </div>
+
+        <!-- Right Sidebar (AI) -->
+        <div 
+            class="fixed inset-0 z-50 bg-white flex flex-col transition-transform duration-300 lg:relative lg:inset-auto lg:z-10 lg:w-[320px] lg:flex-shrink-0 lg:translate-x-0"
+            :class="showMobileAi ? 'translate-x-0' : 'translate-x-full'"
+        >
+            <div class="lg:hidden h-[48px] bg-dept-hr-main text-white flex items-center justify-between px-4 shrink-0">
+                <div class="flex items-center gap-2 font-bold text-[14px]">
+                    <PhRobot :size="20" weight="fill" /> HR Nexus
+                </div>
+                <button @click="showMobileAi = false" class="p-2 hover:bg-white/20 rounded-btn cursor-pointer border-0 bg-transparent text-white">
+                    <PhX :size="20" />
+                </button>
+            </div>
             
             <!-- Pending Leave Panel -->
             <div class="h-1/2 flex flex-col border-b border-shell-border">
@@ -434,23 +519,42 @@ onUnmounted(() => {
                     <span class="text-[13px] font-semibold tracking-wide">HR NEXUS Agent</span>
                 </div>
                 
-                <div class="flex-1 p-4 overflow-y-auto text-[12px] flex flex-col justify-end gap-3 bg-white">
-                    <div class="p-3 bg-shell-panel border border-shell-border rounded-card shadow-sm rounded-bl-none text-text-secondary">
-                        I noticed {{ metrics.total_employees }} active employees in the system with a total payroll of <strong>{{ formatCurrency(metrics.total_annual_payroll) }}</strong>/year. 
-                        <span v-if="metrics.pending_requests > 0">There are <strong class="text-amber-600">{{ metrics.pending_requests }} pending leave requests</strong> awaiting your review.</span>
-                        <span v-else>All leave requests are up to date! ✅</span>
+                <div class="flex-1 p-4 overflow-y-auto text-[12px] flex flex-col gap-3 bg-white" ref="chatScrollContainer">
+                    <div v-for="(m, idx) in chatMessages" :key="idx" :class="m.role === 'user' ? 'text-right' : 'text-left'">
+                        <div class="inline-block p-3 rounded-card shadow-sm text-text-secondary max-w-[95%] leading-relaxed text-left" 
+                             :class="m.role === 'user' ? 'bg-dept-hr-main/10 text-dept-hr-main border border-dept-hr-main/20 rounded-br-none' : 'bg-shell-panel border border-shell-border rounded-bl-none'">
+                            <RichMessageRenderer :content="m.content" />
+                        </div>
+                    </div>
+                    <div v-if="isChatTyping" class="text-[11px] text-text-disabled animate-pulse flex items-center gap-1.5 pl-1">
+                        <PhRobot :size="14" class="animate-bounce text-dept-hr-main" /> HR Nexus is typing...
                     </div>
                 </div>
                 
                 <div class="p-3 border-t border-shell-border bg-shell-panel">
-                    <input 
-                        type="text" 
-                        placeholder="Ask Nexus to draft a policy..." 
-                        class="w-full px-3 py-2 bg-white border border-shell-border rounded-input text-[12px] focus:ring-1 focus:ring-dept-hr-main outline-none"
-                    />
+                    <div class="relative">
+                        <input 
+                            v-model="chatMessage"
+                            @keyup.enter="sendChatMessage"
+                            type="text" 
+                            placeholder="Ask Nexus to draft a policy..." 
+                            class="w-full pl-3 pr-10 py-2 bg-white border border-shell-border rounded-input text-[12px] focus:ring-1 focus:ring-dept-hr-main outline-none"
+                        />
+                        <button @click="sendChatMessage" class="absolute right-2 top-1/2 -translate-y-1/2 text-dept-hr-main hover:text-cyan-600 transition-colors bg-transparent border-0 cursor-pointer flex items-center justify-center">
+                            <PhArrowRight :size="16" weight="bold" />
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
 
+        <!-- Mobile FAB -->
+        <button 
+            v-if="!showMobileAi"
+            @click="showMobileAi = true"
+            class="lg:hidden absolute bottom-6 right-6 w-14 h-14 bg-dept-hr-main text-white rounded-full shadow-2xl flex items-center justify-center z-40 border-0 cursor-pointer active:scale-95 transition-transform"
+        >
+            <PhRobot :size="28" weight="fill" />
+        </button>
     </div>
 </template>

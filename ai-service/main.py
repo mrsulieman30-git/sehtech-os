@@ -1,199 +1,390 @@
-from fastapi import FastAPI, HTTPException, Header
-from pydantic import BaseModel
-import os
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import json
-import chromadb
-from chromadb.utils import embedding_functions
-from typing import List, Optional
-from openai import AsyncOpenAI
+import sqlite3
+import os
+import urllib.request
+import sys
 
-app = FastAPI()
+def load_env(env_path):
+    if os.path.exists(env_path):
+        try:
+            with open(env_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    if '=' in line:
+                        key, val = line.split('=', 1)
+                        key = key.strip()
+                        val = val.strip().strip('"').strip("'")
+                        os.environ[key] = val
+        except Exception as e:
+            print(f"Warning: Failed to load {env_path}: {e}")
 
-# Initialize ChromaDB for RAG
-chroma_client = chromadb.PersistentClient(path="./chroma_db")
-embedding_func = embedding_functions.DefaultEmbeddingFunction()
-collection = chroma_client.get_or_create_collection(name="sehtech_kb", embedding_function=embedding_func)
+# Load .env configurations
+base_dir = os.path.dirname(os.path.abspath(__file__))
+load_env(os.path.join(base_dir, ".env"))
+load_env(os.path.join(base_dir, "..", ".env"))
 
-SECRET_TOKEN = os.getenv("PYTHON_SERVICE_SECRET", "secret_token_123")
+SECRET_TOKEN = os.environ.get("PYTHON_SERVICE_SECRET", "secret_token_123")
 
-class ChatRequest(BaseModel):
-    agent_id: str
-    message: str
-    context_chunks: List[str]
-    conversation_history: List[dict]
-    system_prompt: str
-    sub_agents: Optional[List[dict]] = []
-    ai_config: Optional[dict] = {}
+# Initialize SQLite database for lightweight local RAG
+db_path = os.path.join(base_dir, "local_rag.db")
+conn = sqlite3.connect(db_path, check_same_thread=False)
+cursor = conn.cursor()
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS sehtech_kb (
+        doc_id TEXT PRIMARY KEY,
+        content TEXT,
+        agent_id TEXT,
+        metadata TEXT
+    )
+""")
+conn.commit()
 
-class RagSearchRequest(BaseModel):
-    query: str
-    agent_id: str
-    top_k: int = 5
-
-def get_ai_client(config: dict):
-    provider = config.get('provider', 'deepseek')
+def extract_ai_config(ai_config):
+    provider = ai_config.get('provider', 'deepseek')
     
     if provider == 'openai':
-        return AsyncOpenAI(api_key=config.get('openai', {}).get('api_key', '')), config.get('openai', {}).get('model', 'gpt-4o')
+        api_key = ai_config.get('openai', {}).get('api_key', '')
+        model_name = ai_config.get('openai', {}).get('model', 'gpt-4o')
+        base_url = "https://api.openai.com/v1"
     elif provider == 'gemini':
-        # Placeholder for Gemini (requires google-generativeai or OpenAI wrapper)
-        return AsyncOpenAI(api_key=config.get('gemini', {}).get('api_key', ''), base_url="https://generativelanguage.googleapis.com/v1beta/openai/"), config.get('gemini', {}).get('model', 'gemini-1.5-pro')
+        api_key = ai_config.get('gemini', {}).get('api_key', '')
+        model_name = ai_config.get('gemini', {}).get('model', 'gemini-1.5-pro')
+        base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
     elif provider == 'claude':
-        # Placeholder for Claude (requires anthropic SDK, but we use OpenAI wrapper if available or fallback)
-        return AsyncOpenAI(api_key=config.get('claude', {}).get('api_key', ''), base_url="https://api.anthropic.com/v1/messages"), config.get('claude', {}).get('model', 'claude-3-opus-20240229')
+        api_key = ai_config.get('claude', {}).get('api_key', '')
+        model_name = ai_config.get('claude', {}).get('model', 'claude-3-opus-20240229')
+        base_url = "https://api.anthropic.com/v1"
     else:
         # Default DeepSeek
-        ds_key = config.get('deepseek', {}).get('api_key', '') or os.getenv("DEEPSEEK_API_KEY", "")
-        ds_model = config.get('deepseek', {}).get('model', 'deepseek-chat')
-        return AsyncOpenAI(api_key=ds_key, base_url="https://api.deepseek.com"), ds_model
-
-@app.post("/api/agent/chat")
-async def agent_chat(request: ChatRequest, authorization: str = Header(None)):
-    if authorization != f"Bearer {SECRET_TOKEN}":
-        raise HTTPException(status_code=403, detail="Unauthorized")
-    
-    client, model_name = get_ai_client(request.ai_config)
-    
-    messages = [{"role": "system", "content": request.system_prompt}]
-    
-    if request.context_chunks:
-        context_str = "\n\n".join(request.context_chunks)
-        messages.append({
-            "role": "system",
-            "content": f"Relevant Knowledge Base Context:\n{context_str}"
-        })
+        api_key = ai_config.get('deepseek', {}).get('api_key', '') or os.environ.get("DEEPSEEK_API_KEY", "")
+        model_name = ai_config.get('deepseek', {}).get('model', 'deepseek-chat')
+        base_url = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
         
-    for msg in request.conversation_history:
-        messages.append(msg)
-        
-    messages.append({"role": "user", "content": request.message})
+    return provider, api_key, model_name, base_url
 
-    # Prepare tools if this is the master agent
-    tools = None
-    if request.agent_id == 'master' and request.sub_agents:
-        agent_descriptions = "\n".join([f"- {a['slug']}: {a['description']}" for a in request.sub_agents])
+def call_openai_compatible(api_key, model_name, base_url, messages, tools=None):
+    url = f"{base_url.rstrip('/')}/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+    
+    payload = {
+        "model": model_name,
+        "messages": messages,
+        "temperature": 0.7,
+        "max_tokens": 2048
+    }
+    if tools:
+        payload["tools"] = tools
+        
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode('utf-8'),
+        headers=headers,
+        method='POST'
+    )
+    
+    with urllib.request.urlopen(req, timeout=120) as response:
+        res_body = response.read().decode('utf-8')
+        return json.loads(res_body)
+
+class AgentServiceHandler(BaseHTTPRequestHandler):
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+        self.end_headers()
+
+    def send_cors_headers(self, status):
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+
+    def do_POST(self):
+        auth_header = self.headers.get('Authorization')
+        if not auth_header or auth_header != f"Bearer {SECRET_TOKEN}":
+            self.send_cors_headers(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"detail": "Unauthorized"}).encode('utf-8'))
+            return
+            
+        content_length = int(self.headers.get('Content-Length', 0))
+        post_data = self.rfile.read(content_length).decode('utf-8')
+        
+        try:
+            req_data = json.loads(post_data) if post_data else {}
+        except Exception as e:
+            self.send_cors_headers(400)
+            self.end_headers()
+            self.wfile.write(json.dumps({"detail": f"Invalid JSON: {str(e)}"}).encode('utf-8'))
+            return
+
+        try:
+            if self.path == "/api/embed/document":
+                self.handle_embed(req_data)
+            elif self.path == "/api/rag/search":
+                self.handle_rag(req_data)
+            elif self.path == "/api/agent/chat":
+                self.handle_chat(req_data)
+            else:
+                self.send_cors_headers(404)
+                self.end_headers()
+                self.wfile.write(json.dumps({"detail": "Not Found"}).encode('utf-8'))
+        except Exception as e:
+            self.send_cors_headers(500)
+            self.end_headers()
+            err_msg = str(e)
+            if hasattr(e, 'read'):
+                try:
+                    err_msg += f" - Response: {e.read().decode('utf-8')}"
+                except:
+                    pass
+            self.wfile.write(json.dumps({"detail": err_msg}).encode('utf-8'))
+
+    def handle_embed(self, req_data):
+        doc_id = req_data.get('doc_id')
+        content = req_data.get('content')
+        agent_id = req_data.get('agent_id')
+        metadata = json.dumps(req_data.get('metadata', {}))
+        
+        cursor.execute(
+            "INSERT OR REPLACE INTO sehtech_kb (doc_id, content, agent_id, metadata) VALUES (?, ?, ?, ?)",
+            (doc_id, content, agent_id, metadata)
+        )
+        conn.commit()
+        
+        self.send_cors_headers(200)
+        self.end_headers()
+        self.wfile.write(json.dumps({"status": "indexed"}).encode('utf-8'))
+
+    def handle_rag(self, req_data):
+        query = req_data.get('query', '')
+        agent_id = req_data.get('agent_id', '')
+        top_k = req_data.get('top_k', 5)
+        
+        cursor.execute("SELECT doc_id, content, agent_id, metadata FROM sehtech_kb WHERE agent_id = ?", (agent_id,))
+        rows = cursor.fetchall()
+        
+        documents = []
+        for r in rows:
+            documents.append({
+                "doc_id": r[0],
+                "content": r[1],
+                "agent_id": r[2],
+                "metadata": json.loads(r[3]) if r[3] else {}
+            })
+            
+        # Scoring logic using case-insensitive keyword and exact phrase matching
+        query_words = [w.lower() for w in query.split() if len(w) > 2]
+        scored_docs = []
+        for doc in documents:
+            doc_content = doc['content'].lower()
+            score = 0
+            for word in query_words:
+                score += doc_content.count(word)
+            if query.lower() in doc_content:
+                score += len(query_words) * 5 + 5
+            scored_docs.append((score, doc))
+            
+        scored_docs.sort(key=lambda x: x[0], reverse=True)
+        top_docs = [item[1] for item in scored_docs[:top_k]]
+        
+        chunks = []
+        for doc in top_docs:
+            chunks.append({
+                "content": doc['content'],
+                "metadata": doc['metadata']
+            })
+            
+        self.send_cors_headers(200)
+        self.end_headers()
+        self.wfile.write(json.dumps({"chunks": chunks}).encode('utf-8'))
+
+    def handle_chat(self, req_data):
+        agent_id = req_data.get('agent_id', '')
+        message = req_data.get('message', '')
+        context_chunks = req_data.get('context_chunks', [])
+        conversation_history = req_data.get('conversation_history', [])
+        system_prompt = req_data.get('system_prompt', '')
+        sub_agents = req_data.get('sub_agents', [])
+        ai_config = req_data.get('ai_config', {})
+        
+        provider, api_key, model_name, base_url = extract_ai_config(ai_config)
+        
+        messages = [{"role": "system", "content": system_prompt}]
+        
+        if context_chunks:
+            context_str = "\n\n".join(context_chunks)
+            messages.append({
+                "role": "system",
+                "content": f"Relevant Knowledge Base Context:\n{context_str}"
+            })
+            
+        for msg in conversation_history:
+            messages.append(msg)
+            
+        messages.append({"role": "user", "content": message})
+        
         tools = [
             {
                 "type": "function",
                 "function": {
-                    "name": "delegate_task_to_agent",
-                    "description": f"Delegate a specialized task to a departmental sub-agent. Available agents:\n{agent_descriptions}",
+                    "name": "execute_system_action",
+                    "description": "Execute a specific system action to modify or delete data. Use this ONLY if explicitly commanded by the user.",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "target_agent_slug": {
+                            "action": {
                                 "type": "string",
-                                "description": "The slug of the agent to delegate to (e.g., hr-agent, finance-agent)"
+                                "description": "The action to execute (e.g., 'create_employee', 'terminate_employee')",
+                                "enum": ["create_employee", "terminate_employee"]
                             },
-                            "task_description": {
+                            "payload": {
                                 "type": "string",
-                                "description": "The specific task or question to ask the sub-agent"
+                                "description": "JSON string containing the payload for the action. For create_employee: {name, email, department, job_title, salary}. For terminate_employee: {email}."
                             }
                         },
-                        "required": ["target_agent_slug", "task_description"]
+                        "required": ["action", "payload"]
                     }
                 }
             }
         ]
-
-    try:
-        # Initial call
-        response = await client.chat.completions.create(
-            model=model_name,
-            messages=messages,
-            tools=tools,
-            max_tokens=2048,
-            temperature=0.7
-        )
         
-        response_msg = response.choices[0].message
-        
-        # Tool execution loop
-        while response_msg.tool_calls:
-            messages.append(response_msg) # Append the assistant's tool call message
+        if agent_id == 'master' and sub_agents:
+            agent_descriptions = "\n".join([f"- {a['slug']}: {a['description']}" for a in sub_agents])
+            tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "delegate_task_to_agent",
+                        "description": f"Delegate a specialized task to a departmental sub-agent. Available agents:\n{agent_descriptions}",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "target_agent_slug": {
+                                    "type": "string",
+                                    "description": "The slug of the agent to delegate to (e.g., hr-agent, finance-agent)"
+                                },
+                                "task_description": {
+                                    "type": "string",
+                                    "description": "The specific task or question to ask the sub-agent"
+                                }
+                            },
+                            "required": ["target_agent_slug", "task_description"]
+                        }
+                    }
+                }
+            )
             
-            for tool_call in response_msg.tool_calls:
-                if tool_call.function.name == "delegate_task_to_agent":
-                    args = json.loads(tool_call.function.arguments)
-                    target_slug = args.get("target_agent_slug")
-                    task = args.get("task_description")
+        # Call LLM & process tool loop
+        resp = call_openai_compatible(api_key, model_name, base_url, messages, tools)
+        choice = resp['choices'][0]
+        resp_msg = choice['message']
+        
+        while resp_msg.get('tool_calls'):
+            messages.append(resp_msg)
+            
+            for tc in resp_msg['tool_calls']:
+                if tc['function']['name'] == 'delegate_task_to_agent':
+                    args = json.loads(tc['function']['arguments'])
+                    target_slug = args.get('target_agent_slug')
+                    task = args.get('task_description')
                     
-                    # Find the sub-agent system prompt
-                    sub_agent = next((a for a in request.sub_agents if a['slug'] == target_slug), None)
+                    sub_agent = next((a for a in sub_agents if a['slug'] == target_slug), None)
                     
                     if sub_agent:
-                        # Execute sub-agent internally
                         sub_messages = [
                             {"role": "system", "content": sub_agent['system_prompt']},
                             {"role": "user", "content": task}
                         ]
-                        sub_resp = await client.chat.completions.create(
-                            model=model_name,
-                            messages=sub_messages,
-                            max_tokens=1024,
-                            temperature=0.7
-                        )
-                        result_content = sub_resp.choices[0].message.content
+                        sub_resp = call_openai_compatible(api_key, model_name, base_url, sub_messages)
+                        result_content = sub_resp['choices'][0]['message']['content']
                     else:
                         result_content = f"Error: Agent '{target_slug}' not found."
                         
-                    # Append tool response
                     messages.append({
                         "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "name": tool_call.function.name,
+                        "tool_call_id": tc['id'],
+                        "name": tc['function']['name'],
                         "content": result_content
                     })
+                elif tc['function']['name'] == 'execute_system_action':
+                    args = json.loads(tc['function']['arguments'])
+                    action = args.get('action')
+                    payload = args.get('payload')
+                    laravel_url = req_data.get('laravel_url', 'http://127.0.0.1:8000')
                     
-            # Call again with tool responses
-            response = await client.chat.completions.create(
-                model=model_name,
-                messages=messages,
-                tools=tools,
-                max_tokens=2048,
-                temperature=0.7
-            )
-            response_msg = response.choices[0].message
-        
-        return {
-            "response_text": response_msg.content,
-            "tokens_used": response.usage.total_tokens if response.usage else 0,
+                    try:
+                        req_url = f"{laravel_url.rstrip('/')}/api/internal/agent-action"
+                        req_headers = {
+                            "Content-Type": "application/json",
+                            "Authorization": f"Bearer {SECRET_TOKEN}"
+                        }
+                        req_payload = {
+                            "action": action,
+                            "payload": payload,
+                            "user_id": "ai_agent"
+                        }
+                        
+                        agent_req = urllib.request.Request(
+                            req_url,
+                            data=json.dumps(req_payload).encode('utf-8'),
+                            headers=req_headers,
+                            method='POST'
+                        )
+                        
+                        with urllib.request.urlopen(agent_req, timeout=30) as agent_resp:
+                            result_content = agent_resp.read().decode('utf-8')
+                    except Exception as e:
+                        err_msg = str(e)
+                        if hasattr(e, 'read'):
+                            try:
+                                err_msg += f" - Response: {e.read().decode('utf-8')}"
+                            except:
+                                pass
+                        result_content = f"Error executing action: {err_msg}"
+                        
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc['id'],
+                        "name": tc['function']['name'],
+                        "content": result_content
+                    })
+            
+            resp = call_openai_compatible(api_key, model_name, base_url, messages, tools)
+            choice = resp['choices'][0]
+            resp_msg = choice['message']
+            
+        self.send_cors_headers(200)
+        self.end_headers()
+        self.wfile.write(json.dumps({
+            "response_text": resp_msg.get('content'),
+            "tokens_used": resp.get('usage', {}).get('total_tokens', 0),
             "model_used": model_name
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        }).encode('utf-8'))
 
-@app.post("/api/rag/search")
-async def rag_search(request: RagSearchRequest, authorization: str = Header(None)):
-    if authorization != f"Bearer {SECRET_TOKEN}":
-        raise HTTPException(status_code=403, detail="Unauthorized")
+def run(port=8001):
+    server_address = ('127.0.0.1', port)
+    httpd = HTTPServer(server_address, AgentServiceHandler)
+    print(f"Starting zero-dependency Universal AI backend on http://127.0.0.1:{port}...")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStopping AI backend...")
+        httpd.server_close()
 
-    results = collection.query(
-        query_texts=[request.query],
-        n_results=request.top_k,
-        where={"agent_id": request.agent_id} # Scope search to agent's department
-    )
-    
-    # Format chunks for Laravel
-    chunks = []
-    if results and results.get('documents') and len(results['documents']) > 0:
-        for i in range(len(results['documents'][0])):
-            chunks.append({
-                "content": results['documents'][0][i],
-                "metadata": results['metadatas'][0][i] if results.get('metadatas') and len(results['metadatas']) > 0 else {}
-            })
-        
-    return {"chunks": chunks}
-
-@app.post("/api/embed/document")
-async def embed_document(data: dict, authorization: str = Header(None)):
-    if authorization != f"Bearer {SECRET_TOKEN}":
-        raise HTTPException(status_code=403, detail="Unauthorized")
-
-    # data: { doc_id, content, agent_id, metadata }
-    collection.add(
-        documents=[data['content']],
-        metadatas=[{"agent_id": data['agent_id'], "doc_id": data['doc_id']}],
-        ids=[data['doc_id']]
-    )
-    return {"status": "indexed"}
+if __name__ == '__main__':
+    port_arg = 8001
+    if len(sys.argv) > 1:
+        try:
+            port_arg = int(sys.argv[1])
+        except ValueError:
+            pass
+    run(port_arg)

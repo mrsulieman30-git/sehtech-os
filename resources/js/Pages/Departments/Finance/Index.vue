@@ -6,14 +6,19 @@ import {
     PhPlus, PhRobot, PhDotsThree, PhFilePdf, 
     PhPaperPlaneRight, PhTrash, PhCheckCircle, 
     PhUsers, PhTrendUp, PhTrendDown, PhPiggyBank, PhHourglass,
-    PhPencilSimple, PhCheck, PhX, PhRepeat, PhProhibit, PhXCircle
+    PhPencilSimple, PhCheck, PhX, PhRepeat, PhProhibit, PhXCircle, PhArrowRight
 } from '@phosphor-icons/vue';
 import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime';
 import { useModalStore } from '@/Stores/useModalStore';
 import { useToastStore } from '@/Stores/useToastStore';
+import RichMessageRenderer from '@/Components/Ai/RichMessageRenderer.vue';
 
 const modalStore = useModalStore();
 const toastStore = useToastStore();
+const showMobileAi = ref(false);
+
+dayjs.extend(relativeTime);
 
 interface Invoice {
     id: string; invoice_number: string; issue_date: string; due_date: string;
@@ -556,8 +561,48 @@ const saveEmployeeSalary = async (emp: any) => {
     }
 };
 
-const triggerAIToast = (msg: string) => {
-    alert(`FINANCE NEXUS: ${msg}`);
+// Finance Agent Chat logic
+const chatMessage = ref('');
+const chatMessages = ref<{ role: string; content: string }>([
+    {
+        role: 'assistant',
+        content: 'I am Finance NEXUS. How can I assist you with invoicing, cash flow, or reporting?'
+    }
+]);
+const isChatTyping = ref(false);
+const chatScrollContainer = ref<HTMLElement | null>(null);
+
+const scrollToBottom = () => {
+    setTimeout(() => {
+        if (chatScrollContainer.value) {
+            chatScrollContainer.value.scrollTop = chatScrollContainer.value.scrollHeight;
+        }
+    }, 50);
+};
+
+const sendChatMessage = async () => {
+    if (!chatMessage.value.trim() || isChatTyping.value) return;
+    
+    const userMsg = chatMessage.value;
+    chatMessages.value.push({ role: 'user', content: userMsg });
+    chatMessage.value = '';
+    isChatTyping.value = true;
+    scrollToBottom();
+    
+    try {
+        const response = await axios.post('/api/agents/finance-agent/chat', {
+            message: userMsg
+        });
+        chatMessages.value.push({ role: 'assistant', content: response.data.response_text });
+    } catch (e) {
+        chatMessages.value.push({ 
+            role: 'assistant', 
+            content: 'Agent is currently offline. Please ensure the AI service is running.' 
+        });
+    } finally {
+        isChatTyping.value = false;
+        scrollToBottom();
+    }
 };
 
 onMounted(() => {
@@ -571,19 +616,19 @@ onUnmounted(() => {
 </script>
 
 <template>
-    <div class="h-full flex flex-row bg-shell-panel text-text-primary overflow-hidden font-sans">
+    <div class="h-full flex flex-col lg:flex-row bg-shell-panel text-text-primary overflow-hidden font-sans relative">
         
         <!-- Sidebar Navigation -->
-        <div class="w-[240px] flex-shrink-0 border-r border-shell-border bg-shell-panel flex flex-col h-full">
-            <div class="h-[56px] flex items-center px-6 border-b border-shell-border bg-white shrink-0 gap-3">
+        <div class="w-full lg:w-[240px] flex-shrink-0 border-b lg:border-b-0 lg:border-r border-shell-border bg-shell-panel flex flex-col lg:h-full z-20">
+            <div class="h-[48px] lg:h-[56px] flex items-center px-4 lg:px-6 border-b border-shell-border bg-white shrink-0 gap-3">
                 <PhBank :size="24" class="text-dept-finance-main" weight="fill" />
                 <h2 class="text-[15px] font-bold text-text-primary">Finance</h2>
             </div>
             
-            <div class="flex-1 overflow-y-auto p-3 flex flex-col gap-1">
+            <div class="flex-none lg:flex-1 overflow-x-auto lg:overflow-y-auto p-2 lg:p-3 flex flex-row lg:flex-col gap-1 whitespace-nowrap scrollbar-hide">
                 <button 
                     @click="changeTab('dashboard')"
-                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-btn text-[13px] font-medium transition-colors border-0 bg-transparent cursor-pointer text-left"
+                    class="w-auto lg:w-full flex items-center gap-2 lg:gap-3 px-3 py-2 lg:py-2.5 rounded-btn text-[13px] font-medium transition-colors border-0 bg-transparent cursor-pointer text-left"
                     :class="activeTab === 'dashboard' ? 'bg-dept-finance-main/10 text-dept-finance-main font-bold' : 'text-text-secondary hover:bg-shell-border/50'"
                 >
                     <PhChartLineUp :size="18" :weight="activeTab === 'dashboard' ? 'fill' : 'regular'" />
@@ -591,65 +636,65 @@ onUnmounted(() => {
                 </button>
                 <button 
                     @click="changeTab('invoices')"
-                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-btn text-[13px] font-medium transition-colors border-0 bg-transparent cursor-pointer text-left"
+                    class="w-auto lg:w-full flex items-center gap-2 lg:gap-3 px-3 py-2 lg:py-2.5 rounded-btn text-[13px] font-medium transition-colors border-0 bg-transparent cursor-pointer text-left"
                     :class="activeTab === 'invoices' ? 'bg-dept-finance-main/10 text-dept-finance-main font-bold' : 'text-text-secondary hover:bg-shell-border/50'"
                 >
                     <PhReceipt :size="18" :weight="activeTab === 'invoices' ? 'fill' : 'regular'" />
-                    Invoices (Receivables)
+                    Invoices
                 </button>
                 <button 
                     @click="changeTab('bills')"
-                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-btn text-[13px] font-medium transition-colors border-0 bg-transparent cursor-pointer text-left"
+                    class="w-auto lg:w-full flex items-center gap-2 lg:gap-3 px-3 py-2 lg:py-2.5 rounded-btn text-[13px] font-medium transition-colors border-0 bg-transparent cursor-pointer text-left"
                     :class="activeTab === 'bills' ? 'bg-dept-finance-main/10 text-dept-finance-main font-bold' : 'text-text-secondary hover:bg-shell-border/50'"
                 >
                     <PhMoney :size="18" :weight="activeTab === 'bills' ? 'fill' : 'regular'" />
-                    Bills (Payables)
+                    Bills
                 </button>
                 
-                <div class="text-[10px] font-bold text-text-disabled uppercase px-3 pt-6 pb-2">Synergies</div>
+                <div class="hidden lg:block text-[10px] font-bold text-text-disabled uppercase px-3 pt-6 pb-2">Synergies</div>
                 
                 <button 
                     @click="changeTab('sales-synergy')"
-                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-btn text-[13px] font-medium transition-colors border-0 bg-transparent cursor-pointer text-left"
+                    class="w-auto lg:w-full flex items-center gap-2 lg:gap-3 px-3 py-2 lg:py-2.5 rounded-btn text-[13px] font-medium transition-colors border-0 bg-transparent cursor-pointer text-left"
                     :class="activeTab === 'sales-synergy' ? 'bg-dept-finance-main/10 text-dept-finance-main font-bold' : 'text-text-secondary hover:bg-shell-border/50'"
                 >
                     <PhPaperPlaneRight :size="18" :weight="activeTab === 'sales-synergy' ? 'fill' : 'regular'" />
-                    Sales Won Billing
-                    <span v-if="wonDeals.length" class="ml-auto w-5 h-5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center font-bold">{{ wonDeals.length }}</span>
+                    Sales Sync
+                    <span v-if="wonDeals.length" class="ml-2 lg:ml-auto w-5 h-5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center font-bold">{{ wonDeals.length }}</span>
                 </button>
                 <button 
                     @click="changeTab('hr-synergy')"
-                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-btn text-[13px] font-medium transition-colors border-0 bg-transparent cursor-pointer text-left"
+                    class="w-auto lg:w-full flex items-center gap-2 lg:gap-3 px-3 py-2 lg:py-2.5 rounded-btn text-[13px] font-medium transition-colors border-0 bg-transparent cursor-pointer text-left"
                     :class="activeTab === 'hr-synergy' ? 'bg-dept-finance-main/10 text-dept-finance-main font-bold' : 'text-text-secondary hover:bg-shell-border/50'"
                 >
                     <PhUsers :size="18" :weight="activeTab === 'hr-synergy' ? 'fill' : 'regular'" />
-                    HR Payroll Sync
+                    HR Sync
                 </button>
             </div>
         </div>
 
         <!-- Main Content Area -->
-        <div class="flex-1 flex flex-col h-full bg-[#F8FAFC] overflow-hidden">
-            <div class="h-[56px] bg-white border-b border-shell-border flex items-center px-6 shrink-0 justify-between">
-                <h2 class="text-[16px] font-bold text-text-primary capitalize">{{ activeTab.replace('-', ' ') }}</h2>
-                <div class="flex gap-2">
-                    <button v-if="activeTab === 'invoices'" @click="modalStore.openModal('record-payment')" class="px-4 py-1.5 bg-white border border-shell-border text-text-primary text-[13px] font-medium rounded-btn hover:bg-shell-panel transition-colors cursor-pointer">
+        <div class="flex-1 flex flex-col h-full bg-[#F8FAFC] overflow-hidden border-r-0 lg:border-r border-shell-border z-10">
+            <div class="h-[56px] bg-white border-b border-shell-border flex items-center px-4 lg:px-6 shrink-0 justify-between gap-2 overflow-x-auto hide-scrollbar">
+                <h2 class="text-[16px] font-bold text-text-primary capitalize whitespace-nowrap">{{ activeTab.replace('-', ' ') }}</h2>
+                <div class="flex gap-2 flex-shrink-0">
+                    <button v-if="activeTab === 'invoices'" @click="modalStore.openModal('record-payment')" class="px-3 lg:px-4 py-1.5 bg-white border border-shell-border text-text-primary text-[12px] lg:text-[13px] font-medium rounded-btn hover:bg-shell-panel transition-colors cursor-pointer whitespace-nowrap">
                         Record Payment
                     </button>
-                    <button v-if="activeTab === 'invoices'" @click="exportCSV" class="px-4 py-1.5 bg-white border border-shell-border text-text-primary text-[13px] font-medium rounded-btn hover:bg-shell-panel transition-colors cursor-pointer">
+                    <button v-if="activeTab === 'invoices'" @click="exportCSV" class="px-3 lg:px-4 py-1.5 bg-white border border-shell-border text-text-primary text-[12px] lg:text-[13px] font-medium rounded-btn hover:bg-shell-panel transition-colors cursor-pointer whitespace-nowrap">
                         Export CSV
                     </button>
-                    <button v-if="activeTab === 'invoices'" @click="modalStore.openModal('new-invoice')" class="flex items-center gap-2 px-4 py-1.5 bg-dept-finance-main text-white text-[13px] font-medium rounded-btn hover:bg-[#A16207] transition-colors shadow-sm border-0 cursor-pointer">
+                    <button v-if="activeTab === 'invoices'" @click="modalStore.openModal('new-invoice')" class="flex items-center gap-2 px-3 lg:px-4 py-1.5 bg-dept-finance-main text-white text-[12px] lg:text-[13px] font-medium rounded-btn hover:bg-[#A16207] transition-colors shadow-sm border-0 cursor-pointer whitespace-nowrap">
                         <PhPlus :size="16" weight="bold" /> New Invoice
                     </button>
-                    <button v-if="activeTab === 'bills'" @click="modalStore.openModal('new-bill')" class="flex items-center gap-2 px-4 py-1.5 bg-dept-finance-main text-white text-[13px] font-medium rounded-btn hover:bg-[#A16207] transition-colors shadow-sm border-0 cursor-pointer">
+                    <button v-if="activeTab === 'bills'" @click="modalStore.openModal('new-bill')" class="flex items-center gap-2 px-3 lg:px-4 py-1.5 bg-dept-finance-main text-white text-[12px] lg:text-[13px] font-medium rounded-btn hover:bg-[#A16207] transition-colors shadow-sm border-0 cursor-pointer whitespace-nowrap">
                         <PhPlus :size="16" weight="bold" /> Record Bill
                     </button>
                 </div>
             </div>
 
             <!-- Tab Content -->
-            <div class="flex-1 overflow-y-auto p-6">
+            <div class="flex-1 overflow-y-auto p-4 lg:p-6 pb-20 lg:pb-6">
                 
                 <!-- Overview Tab -->
                 <div v-if="activeTab === 'dashboard'" class="space-y-6">
@@ -770,8 +815,8 @@ onUnmounted(() => {
                 </div>
 
                 <!-- Invoices Tab -->
-                <div v-else-if="activeTab === 'invoices'" class="bg-white border border-shell-border rounded-card shadow-sm overflow-hidden">
-                    <table class="w-full text-left border-collapse">
+                <div v-else-if="activeTab === 'invoices'" class="bg-white border border-shell-border rounded-card shadow-sm overflow-hidden overflow-x-auto">
+                    <table class="w-full min-w-[800px] text-left border-collapse">
                         <thead>
                             <tr class="bg-shell-panel border-b border-shell-border text-[12px] text-text-disabled uppercase tracking-wider">
                                 <th class="px-6 py-3 font-semibold">Invoice ID</th>
@@ -828,8 +873,8 @@ onUnmounted(() => {
                 </div>
 
                 <!-- Bills (Payables) Tab -->
-                <div v-else-if="activeTab === 'bills'" class="bg-white border border-shell-border rounded-card shadow-sm overflow-hidden animate-in fade-in duration-200">
-                    <table class="w-full text-left border-collapse">
+                <div v-else-if="activeTab === 'bills'" class="bg-white border border-shell-border rounded-card shadow-sm overflow-hidden overflow-x-auto animate-in fade-in duration-200">
+                    <table class="w-full min-w-[900px] text-left border-collapse">
                         <thead>
                             <tr class="bg-shell-panel border-b border-shell-border text-[12px] text-text-disabled uppercase tracking-wider">
                                 <th class="px-6 py-3 font-semibold">Bill ID</th>
@@ -926,8 +971,8 @@ onUnmounted(() => {
                         </div>
                     </div>
                     
-                    <div class="bg-white border border-shell-border rounded-card shadow-sm overflow-hidden">
-                        <table class="w-full text-left border-collapse">
+                    <div class="bg-white border border-shell-border rounded-card shadow-sm overflow-hidden overflow-x-auto">
+                        <table class="w-full min-w-[800px] text-left border-collapse">
                             <thead>
                                 <tr class="bg-shell-panel border-b border-shell-border text-[12px] text-text-disabled uppercase tracking-wider">
                                     <th class="px-6 py-3 font-semibold">Deal Title</th>
@@ -1054,52 +1099,62 @@ onUnmounted(() => {
                     </div>
 
                 </div>
-
             </div>
-        </div>
+        </div> <!-- Close Main Content Area -->
 
         <!-- Right AI Sidebar: Nexus -->
-        <div class="w-[300px] flex-shrink-0 border-l border-shell-border bg-white flex flex-col h-full z-10">
-            <div class="h-[56px] flex items-center px-4 border-b border-shell-border bg-dept-finance-main text-white shrink-0 gap-2">
-                <PhRobot :size="20" weight="fill" />
-                <div class="flex flex-col">
-                    <span class="text-[14px] font-bold tracking-wide leading-tight">FINANCE NEXUS</span>
-                    <span class="text-[10px] text-white/70 uppercase font-semibold">AI Assistant</span>
+        <div 
+            class="fixed inset-0 z-50 bg-white flex flex-col transition-transform duration-300 lg:relative lg:inset-auto lg:z-10 lg:w-[320px] lg:flex-shrink-0 lg:translate-x-0"
+            :class="showMobileAi ? 'translate-x-0' : 'translate-x-full'"
+        >
+            <div class="h-[48px] lg:h-[56px] flex items-center justify-between px-4 border-b border-shell-border bg-dept-finance-main text-white shrink-0 gap-2">
+                <div class="flex items-center gap-2">
+                    <PhRobot :size="20" weight="fill" />
+                    <div class="flex flex-col">
+                        <span class="text-[14px] font-bold tracking-wide leading-tight">FINANCE NEXUS</span>
+                        <span class="hidden lg:block text-[10px] text-white/70 uppercase font-semibold">AI Assistant</span>
+                    </div>
                 </div>
+                <button @click="showMobileAi = false" class="lg:hidden p-2 hover:bg-white/20 rounded-btn cursor-pointer border-0 bg-transparent text-white">
+                    <PhX :size="20" />
+                </button>
             </div>
             
-            <div class="flex-1 overflow-y-auto p-4 flex flex-col gap-4 text-[13px] bg-[#F8FAFC]">
-                
-                <div class="p-4 bg-white border border-shell-border rounded-card shadow-sm">
-                    <p class="text-text-primary leading-relaxed font-medium">
-                        Good morning. Your current cash balance is <strong>{{ formatCurrency(metrics.cash_balance) }}</strong>. 
-                        You have <strong class="text-red-500">{{ metrics.outstanding_balance > 0 ? 'outstanding receivables' : 'no collection risks' }}</strong>.
-                    </p>
+            <div class="flex-1 p-4 overflow-y-auto text-[12px] flex flex-col gap-3 bg-white" ref="chatScrollContainer">
+                <div v-for="(m, idx) in chatMessages" :key="idx" :class="m.role === 'user' ? 'text-right' : 'text-left'">
+                    <div class="inline-block p-3 rounded-card shadow-sm text-text-secondary max-w-[95%] leading-relaxed text-left" 
+                         :class="m.role === 'user' ? 'bg-dept-finance-main/10 text-dept-finance-main border border-dept-finance-main/20 rounded-br-none' : 'bg-shell-panel border border-shell-border rounded-bl-none'">
+                        <RichMessageRenderer :content="m.content" />
+                    </div>
                 </div>
-
-                <div class="flex flex-col gap-2">
-                    <button @click="triggerAIToast('Drafting emails for collection accounts...')" class="w-full px-4 py-2.5 bg-white border border-shell-border hover:border-dept-finance-main hover:text-dept-finance-main text-text-primary font-medium rounded-btn transition-colors text-left flex items-center justify-between shadow-sm cursor-pointer">
-                        Draft Overdue Reminders <PhPaperPlaneRight :size="14" />
-                    </button>
-                    <button @click="triggerAIToast('Generating automated cash forecast report...')" class="w-full px-4 py-2.5 bg-white border border-shell-border hover:border-dept-finance-main hover:text-dept-finance-main text-text-primary font-medium rounded-btn transition-colors text-left flex items-center justify-between shadow-sm cursor-pointer">
-                        Generate Cashflow Forecast <PhChartLineUp :size="14" />
-                    </button>
+                <div v-if="isChatTyping" class="text-[11px] text-text-disabled animate-pulse flex items-center gap-1.5 pl-1">
+                    <PhRobot :size="14" class="animate-bounce text-dept-finance-main" /> NEXUS is typing...
                 </div>
             </div>
 
-            <div class="p-4 bg-white border-t border-shell-border shrink-0">
+            <div class="p-3 border-t border-shell-border bg-shell-panel shrink-0">
                 <div class="relative">
                     <input 
+                        v-model="chatMessage"
+                        @keyup.enter="sendChatMessage"
                         type="text" 
                         placeholder="Ask Nexus to generate invoice..." 
-                        class="w-full pl-3 pr-10 py-2.5 bg-[#F8FAFC] border border-shell-border rounded-input text-[13px] focus:ring-1 focus:ring-dept-finance-main focus:border-dept-finance-main outline-none transition-all"
+                        class="w-full pl-3 pr-10 py-2.5 bg-white border border-shell-border rounded-input text-[13px] focus:ring-1 focus:ring-dept-finance-main outline-none" 
                     />
-                    <button class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-text-disabled hover:text-dept-finance-main transition-colors bg-transparent border-0 cursor-pointer">
-                        <PhRobot :size="18" weight="fill" />
+                    <button @click="sendChatMessage" class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-dept-finance-main hover:text-[#A16207] transition-colors cursor-pointer bg-transparent border-0 flex items-center justify-center">
+                        <PhArrowRight :size="16" weight="bold" />
                     </button>
                 </div>
             </div>
         </div>
-
+        
+        <!-- Mobile FAB -->
+        <button 
+            v-if="!showMobileAi"
+            @click="showMobileAi = true"
+            class="lg:hidden absolute bottom-6 right-6 w-14 h-14 bg-dept-finance-main text-white rounded-full shadow-2xl flex items-center justify-center z-40 border-0 cursor-pointer active:scale-95 transition-transform"
+        >
+            <PhRobot :size="28" weight="fill" />
+        </button>
     </div>
 </template>

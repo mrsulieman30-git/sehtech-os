@@ -3,9 +3,10 @@ import { ref, onMounted, onUnmounted } from 'vue';
 import axios from 'axios';
 import { 
     PhBuildings, PhUsers, PhShieldCheck, PhListDashes, 
-    PhMagnifyingGlass, PhPlus, PhDotsThree, PhGear
+    PhMagnifyingGlass, PhPlus, PhDotsThree, PhGear, PhRobot, PhArrowRight
 } from '@phosphor-icons/vue';
 import { useModalStore } from '@/Stores/useModalStore';
+import RichMessageRenderer from '@/Components/Ai/RichMessageRenderer.vue';
 
 const modalStore = useModalStore();
 
@@ -13,11 +14,56 @@ const activeTab = ref('users');
 const searchQuery = ref('');
 const users = ref<any[]>([]);
 const roles = ref<any[]>([]);
+const departments = ref<any[]>([]);
 const selectedRole = ref<any>(null);
 const isSavingRole = ref(false);
 
 const saveAdminSettings = () => {
     window.alert('Settings saved successfully!');
+};
+
+// Admin Agent Chat logic
+const chatMessage = ref('');
+const chatMessages = ref<{ role: string; content: string }>([
+    {
+        role: 'assistant',
+        content: 'I am SYSTEM ADMIN AI. How can I help you configure roles or manage users?'
+    }
+]);
+const isChatTyping = ref(false);
+const chatScrollContainer = ref<HTMLElement | null>(null);
+
+const scrollToBottom = () => {
+    setTimeout(() => {
+        if (chatScrollContainer.value) {
+            chatScrollContainer.value.scrollTop = chatScrollContainer.value.scrollHeight;
+        }
+    }, 50);
+};
+
+const sendChatMessage = async () => {
+    if (!chatMessage.value.trim() || isChatTyping.value) return;
+    
+    const userMsg = chatMessage.value;
+    chatMessages.value.push({ role: 'user', content: userMsg });
+    chatMessage.value = '';
+    isChatTyping.value = true;
+    scrollToBottom();
+    
+    try {
+        const response = await axios.post('/api/agents/admin-agent/chat', {
+            message: userMsg
+        });
+        chatMessages.value.push({ role: 'assistant', content: response.data.response_text });
+    } catch (e) {
+        chatMessages.value.push({ 
+            role: 'assistant', 
+            content: 'Agent is currently offline. Please ensure the AI service is running.' 
+        });
+    } finally {
+        isChatTyping.value = false;
+        scrollToBottom();
+    }
 };
 
 const permissionCategories = [
@@ -34,7 +80,34 @@ const fetchUsers = async () => {
     try {
         const res = await axios.get('/api/admin/users');
         users.value = res.data.users;
+        departments.value = res.data.departments || [];
     } catch(e) { console.error(e); }
+};
+
+const openEditModal = (user: any) => {
+    modalStore.openModal('edit-user', { 
+        user, 
+        roles: roles.value, 
+        departments: departments.value 
+    });
+};
+
+const deleteUser = async (user: any) => {
+    if (user.email === 'admin@sehtech.com') {
+        window.alert('The default system administrator account cannot be deleted.');
+        return;
+    }
+    if (confirm(`Are you sure you want to delete user ${user.name}? This will immediately revoke their access.`)) {
+        try {
+            await axios.delete(`/api/admin/users/${user.id}`);
+            fetchUsers();
+            window.dispatchEvent(new CustomEvent('refresh-hr-dashboard'));
+            window.dispatchEvent(new CustomEvent('refresh-finance-dashboard'));
+        } catch (e) {
+            console.error(e);
+            window.alert('Failed to delete user.');
+        }
+    }
 };
 
 const fetchRoles = async () => {
@@ -118,7 +191,7 @@ onUnmounted(() => window.removeEventListener('refresh-admin-dashboard', handleRe
                     <PhMagnifyingGlass :size="16" class="absolute left-3 top-1/2 -translate-y-1/2 text-text-disabled" />
                     <input v-model="searchQuery" type="text" placeholder="Search records..." class="w-full pl-9 pr-4 py-1.5 bg-shell-panel border border-shell-border rounded-input text-[13px] focus:ring-1 focus:ring-dept-admin-main outline-none transition-all" />
                 </div>
-                <button @click="modalStore.openModal('add-user')" class="flex items-center gap-2 px-4 py-1.5 bg-dept-admin-main text-white text-[13px] font-medium rounded-btn hover:bg-[#0F172A] transition-colors shadow-sm">
+                <button @click="modalStore.openModal('add-user', { roles: roles, departments: departments })" class="flex items-center gap-2 px-4 py-1.5 bg-dept-admin-main text-white text-[13px] font-medium rounded-btn hover:bg-[#0F172A] transition-colors shadow-sm border-0 cursor-pointer">
                     <PhPlus :size="16" weight="bold" /> Add New User
                 </button>
             </div>
@@ -148,7 +221,14 @@ onUnmounted(() => window.removeEventListener('refresh-admin-dashboard', handleRe
                                     </span>
                                 </td>
                                 <td class="px-6 py-4 text-right">
-                                    <button class="p-1.5 hover:bg-white hover:text-text-primary rounded transition-colors"><PhDotsThree :size="16" weight="bold" /></button>
+                                    <div class="flex justify-end gap-2">
+                                        <button @click="openEditModal(user)" class="px-2.5 py-1 text-[11px] font-bold text-dept-admin-main bg-dept-admin-main/10 hover:bg-dept-admin-main/20 rounded transition-colors border-0 cursor-pointer">
+                                            Edit
+                                        </button>
+                                        <button v-if="user.email !== 'admin@sehtech.com'" @click="deleteUser(user)" class="px-2.5 py-1 text-[11px] font-bold text-state-error bg-state-error/10 hover:bg-state-error/20 rounded transition-colors border-0 cursor-pointer">
+                                            Delete
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         </tbody>
@@ -273,5 +353,44 @@ onUnmounted(() => window.removeEventListener('refresh-admin-dashboard', handleRe
                 </div>
             </div>
         </div>
+
+        <!-- Right AI Sidebar: ADMIN AI -->
+        <div class="w-[300px] flex-shrink-0 border-l border-shell-border bg-shell-panel flex flex-col h-full z-10">
+            <div class="h-[56px] flex items-center px-4 border-b border-shell-border bg-dept-admin-main text-white shrink-0 gap-2">
+                <PhRobot :size="20" weight="fill" />
+                <div class="flex flex-col">
+                    <span class="text-[14px] font-bold tracking-wide leading-tight">ADMIN AI</span>
+                    <span class="text-[10px] text-white/70 uppercase font-semibold">System Assistant</span>
+                </div>
+            </div>
+            
+            <div class="flex-1 p-4 overflow-y-auto text-[12px] flex flex-col gap-3 bg-white" ref="chatScrollContainer">
+                <div v-for="(m, idx) in chatMessages" :key="idx" :class="m.role === 'user' ? 'text-right' : 'text-left'">
+                    <div class="inline-block p-3 rounded-card shadow-sm text-text-secondary max-w-[95%] leading-relaxed text-left" 
+                         :class="m.role === 'user' ? 'bg-dept-admin-main/10 text-dept-admin-main border border-dept-admin-main/20 rounded-br-none' : 'bg-shell-panel border border-shell-border rounded-bl-none'">
+                        <RichMessageRenderer :content="m.content" />
+                    </div>
+                </div>
+                <div v-if="isChatTyping" class="text-[11px] text-text-disabled animate-pulse flex items-center gap-1.5 pl-1">
+                    <PhRobot :size="14" class="animate-bounce text-dept-admin-main" /> ADMIN AI is typing...
+                </div>
+            </div>
+
+            <div class="p-3 border-t border-shell-border bg-shell-panel shrink-0">
+                <div class="relative">
+                    <input 
+                        v-model="chatMessage"
+                        @keyup.enter="sendChatMessage"
+                        type="text" 
+                        placeholder="Ask Admin AI..." 
+                        class="w-full pl-3 pr-10 py-2.5 bg-white border border-shell-border rounded-input text-[13px] focus:ring-1 focus:ring-dept-admin-main outline-none" 
+                    />
+                    <button @click="sendChatMessage" class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-dept-admin-main hover:text-[#0F172A] transition-colors cursor-pointer bg-transparent border-0 flex items-center justify-center">
+                        <PhArrowRight :size="16" weight="bold" />
+                    </button>
+                </div>
+            </div>
+        </div>
+
     </div>
 </template>

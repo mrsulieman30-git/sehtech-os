@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useWindowManagerStore, type AppWindow } from '@/Stores/useWindowManagerStore';
 import { PhMinus, PhCornersOut, PhX } from '@phosphor-icons/vue';
 import { AppRegistry } from '@/OS/AppRegistry';
@@ -22,15 +22,24 @@ onMounted(() => {
         x: (vw - (vw * 0.8)) / 2,
         y: Math.max(40, (vh - (vh * 0.85)) / 2)
     };
+
+    const checkMobile = () => { isMobile.value = window.innerWidth < 768; };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+});
+
+onUnmounted(() => {
+    window.removeEventListener('resize', () => { isMobile.value = window.innerWidth < 768; });
 });
 
 let startX = 0;
 let startY = 0;
 let initialX = 0;
 let initialY = 0;
+const isMobile = ref(false);
 
 const startDrag = (e: MouseEvent) => {
-    if (props.windowData.isMaximized) return; 
+    if (props.windowData.isMaximized || isMobile.value) return; 
     
     isDragging.value = true;
     startX = e.clientX;
@@ -102,14 +111,15 @@ const windowStyle = computed(() => {
         };
     }
     
-    if (props.windowData.isMaximized) {
+    if (props.windowData.isMaximized || isMobile.value) {
         return {
             top: '0px',
             left: '0px',
             width: '100vw',
             height: '100vh', 
             zIndex: props.windowData.zIndex,
-            transform: 'none'
+            transform: 'none',
+            borderRadius: '0px'
         };
     }
     
@@ -139,7 +149,7 @@ const activeComponent = computed(() => {
         <div 
             @mousedown="startDrag"
             class="flex items-center justify-between h-[44px] bg-shell-window border-b border-shell-border select-none"
-            :class="{ 'cursor-grab active:cursor-grabbing': !windowData.isMaximized }"
+            :class="{ 'cursor-grab active:cursor-grabbing': !windowData.isMaximized && !isMobile }"
         >
             <div class="flex items-center h-full">
                 <div class="h-full w-[6px]" :style="{ backgroundColor: windowData.color }"></div>
@@ -149,10 +159,10 @@ const activeComponent = computed(() => {
             </div>
 
             <div class="flex items-center gap-2 pr-4" @mousedown.stop>
-                <button @click="handleMinimize" class="w-[28px] h-[28px] flex items-center justify-center rounded-btn text-text-disabled hover:bg-shell-panel hover:text-text-primary transition-colors">
+                <button v-if="!isMobile" @click="handleMinimize" class="w-[28px] h-[28px] flex items-center justify-center rounded-btn text-text-disabled hover:bg-shell-panel hover:text-text-primary transition-colors">
                     <PhMinus :size="16" weight="bold" />
                 </button>
-                <button @click="handleMaximize" class="w-[28px] h-[28px] flex items-center justify-center rounded-btn text-text-disabled hover:bg-shell-panel hover:text-text-primary transition-colors">
+                <button v-if="!isMobile" @click="handleMaximize" class="w-[28px] h-[28px] flex items-center justify-center rounded-btn text-text-disabled hover:bg-shell-panel hover:text-text-primary transition-colors">
                     <PhCornersOut :size="16" weight="bold" />
                 </button>
                 <button @click="handleClose" class="w-[28px] h-[28px] flex items-center justify-center rounded-btn text-text-disabled hover:bg-state-error hover:text-white transition-colors">

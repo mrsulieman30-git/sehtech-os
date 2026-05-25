@@ -106,6 +106,20 @@ class HrController extends Controller
      */
     public function storeEmployee(Request $request)
     {
+        if ($request->input('department_id') === '') {
+            $request->merge(['department_id' => null]);
+        }
+        if ($request->input('role_id') === '') {
+            $request->merge(['role_id' => null]);
+        }
+        if ($request->input('manager_id') === '') {
+            $request->merge(['manager_id' => null]);
+        }
+
+        if ($request->has('email')) {
+            $request->merge(['email' => strtolower($request->email)]);
+        }
+
         $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email',
@@ -397,5 +411,86 @@ class HrController extends Controller
         ]);
 
         return response()->json(['message' => 'Employee terminated successfully.']);
+    }
+
+    public function updateEmployee(Request $request, $id)
+    {
+        $user = User::findOrFail($id);
+        $profile = EmployeeProfile::where('user_id', $id)->firstOrFail();
+
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email,' . $user->id,
+            'department_id' => 'nullable|uuid|exists:departments,id',
+            'role_id' => 'nullable|uuid|exists:roles,id',
+            'job_title' => 'required|string|max:255',
+            'employment_type' => 'required|string|in:full_time,part_time,contract,intern',
+            'hire_date' => 'required|date',
+            'salary' => 'required|numeric|min:0',
+            'manager_id' => 'nullable|uuid|exists:users,id',
+            'national_id' => 'nullable|string|max:100',
+            'tax_id' => 'nullable|string|max:100',
+            'bank_name' => 'nullable|string|max:255',
+            'bank_account' => 'nullable|string|max:100',
+            'bank_routing' => 'nullable|string|max:100',
+            'emergency_name' => 'nullable|string|max:255',
+            'emergency_phone' => 'nullable|string|max:50',
+            'emergency_relationship' => 'nullable|string|max:100',
+        ]);
+
+        DB::transaction(function () use ($request, $user, $profile) {
+            $user->update([
+                'name' => $request->name,
+                'email' => strtolower($request->email),
+                'department_id' => $request->department_id,
+                'role_id' => $request->role_id,
+            ]);
+
+            $bankDetails = $profile->bank_details ?? [];
+            if ($request->filled('bank_name') || $request->filled('bank_account')) {
+                $bankDetails = [
+                    'bank_name' => $request->bank_name,
+                    'account_number' => $request->bank_account,
+                    'routing_number' => $request->bank_routing,
+                ];
+            }
+
+            $emergencyContact = $profile->emergency_contact ?? [];
+            if ($request->filled('emergency_name') || $request->filled('emergency_phone')) {
+                $emergencyContact = [
+                    'name' => $request->emergency_name,
+                    'phone' => $request->emergency_phone,
+                    'relationship' => $request->emergency_relationship,
+                ];
+            }
+
+            $profile->update([
+                'manager_id' => $request->manager_id,
+                'job_title' => $request->job_title,
+                'employment_type' => $request->employment_type,
+                'hire_date' => $request->hire_date,
+                'salary' => $request->salary,
+                'national_id' => $request->national_id,
+                'tax_id' => $request->tax_id,
+                'bank_details' => $bankDetails,
+                'emergency_contact' => $emergencyContact,
+            ]);
+        });
+
+        return response()->json(['message' => 'Employee updated successfully.']);
+    }
+
+    public function destroyEmployee($id)
+    {
+        $user = User::findOrFail($id);
+        
+        DB::transaction(function () use ($user, $id) {
+            LeaveRequest::where('user_id', $id)->delete();
+            PerformanceReview::where('user_id', $id)->delete();
+            EmployeeProfile::where('user_id', $id)->delete();
+            $user->delete();
+        });
+
+        return response()->json(['message' => 'Employee deleted successfully.']);
     }
 }

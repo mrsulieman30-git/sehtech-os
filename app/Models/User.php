@@ -70,4 +70,9 @@ class User extends Authenticatable
         $permissions = $this->role->permissions ?? [];
         return isset($permissions[$module]) && in_array($action, $permissions[$module]);
     }
+
+    public function setEmailAttribute($value)
+    {
+        $this->attributes['email'] = strtolower($value);
+    }
 }

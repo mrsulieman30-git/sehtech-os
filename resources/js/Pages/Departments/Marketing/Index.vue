@@ -9,6 +9,8 @@ import {
 import { useModalStore } from '@/Stores/useModalStore';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
+import RichMessageRenderer from '@/Components/Ai/RichMessageRenderer.vue';
+import { PhArrowRight, PhRobot } from '@phosphor-icons/vue';
 
 dayjs.extend(relativeTime);
 
@@ -45,6 +47,50 @@ onUnmounted(() => window.removeEventListener('refresh-marketing', handleRefresh)
 const totalLeads = computed(() => accounts.value.length);
 const totalContent = computed(() => contents.value.length);
 const activeChannels = computed(() => channels.value.length);
+
+// Marketing Agent Chat logic
+const chatMessage = ref('');
+const chatMessages = ref<{ role: string; content: string }>([
+    {
+        role: 'assistant',
+        content: 'I am MARKETING AI. Need help generating content or analyzing campaigns?'
+    }
+]);
+const isChatTyping = ref(false);
+const chatScrollContainer = ref<HTMLElement | null>(null);
+
+const scrollToBottom = () => {
+    setTimeout(() => {
+        if (chatScrollContainer.value) {
+            chatScrollContainer.value.scrollTop = chatScrollContainer.value.scrollHeight;
+        }
+    }, 50);
+};
+
+const sendChatMessage = async () => {
+    if (!chatMessage.value.trim() || isChatTyping.value) return;
+    
+    const userMsg = chatMessage.value;
+    chatMessages.value.push({ role: 'user', content: userMsg });
+    chatMessage.value = '';
+    isChatTyping.value = true;
+    scrollToBottom();
+    
+    try {
+        const response = await axios.post('/api/agents/marketing-agent/chat', {
+            message: userMsg
+        });
+        chatMessages.value.push({ role: 'assistant', content: response.data.response_text });
+    } catch (e) {
+        chatMessages.value.push({ 
+            role: 'assistant', 
+            content: 'Agent is currently offline. Please ensure the AI service is running.' 
+        });
+    } finally {
+        isChatTyping.value = false;
+        scrollToBottom();
+    }
+};
 </script>
 
 <template>
@@ -213,5 +259,44 @@ const activeChannels = computed(() => channels.value.length);
             </div>
 
         </div>
+
+        <!-- Right AI Sidebar: MARKETING AI -->
+        <div class="w-[300px] flex-shrink-0 border-l border-shell-border bg-shell-panel flex flex-col h-full z-10">
+            <div class="h-[56px] flex items-center px-4 border-b border-shell-border bg-dept-marketing-main text-white shrink-0 gap-2">
+                <PhRobot :size="20" weight="fill" />
+                <div class="flex flex-col">
+                    <span class="text-[14px] font-bold tracking-wide leading-tight">MARKETING AI</span>
+                    <span class="text-[10px] text-white/70 uppercase font-semibold">Content Assistant</span>
+                </div>
+            </div>
+            
+            <div class="flex-1 p-4 overflow-y-auto text-[12px] flex flex-col gap-3 bg-white" ref="chatScrollContainer">
+                <div v-for="(m, idx) in chatMessages" :key="idx" :class="m.role === 'user' ? 'text-right' : 'text-left'">
+                    <div class="inline-block p-3 rounded-card shadow-sm text-text-secondary max-w-[95%] leading-relaxed text-left" 
+                         :class="m.role === 'user' ? 'bg-dept-marketing-main/10 text-dept-marketing-main border border-dept-marketing-main/20 rounded-br-none' : 'bg-shell-panel border border-shell-border rounded-bl-none'">
+                        <RichMessageRenderer :content="m.content" />
+                    </div>
+                </div>
+                <div v-if="isChatTyping" class="text-[11px] text-text-disabled animate-pulse flex items-center gap-1.5 pl-1">
+                    <PhRobot :size="14" class="animate-bounce text-dept-marketing-main" /> AI is typing...
+                </div>
+            </div>
+
+            <div class="p-3 border-t border-shell-border bg-shell-panel shrink-0">
+                <div class="relative">
+                    <input 
+                        v-model="chatMessage"
+                        @keyup.enter="sendChatMessage"
+                        type="text" 
+                        placeholder="Ask Marketing AI..." 
+                        class="w-full pl-3 pr-10 py-2.5 bg-white border border-shell-border rounded-input text-[13px] focus:ring-1 focus:ring-dept-marketing-main outline-none" 
+                    />
+                    <button @click="sendChatMessage" class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-dept-marketing-main hover:text-[#BE123C] transition-colors cursor-pointer bg-transparent border-0 flex items-center justify-center">
+                        <PhArrowRight :size="16" weight="bold" />
+                    </button>
+                </div>
+            </div>
+        </div>
+
     </div>
 </template>

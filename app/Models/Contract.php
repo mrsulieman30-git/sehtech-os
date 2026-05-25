@@ -20,6 +20,7 @@ class Contract extends Model
         'start_date',
         'end_date',
         'created_by',
+        'body',
     ];
 
     protected $casts = [

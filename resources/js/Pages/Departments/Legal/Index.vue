@@ -9,12 +9,14 @@ import {
 import dayjs from 'dayjs';
 import { useModalStore } from '@/Stores/useModalStore';
 import { useToastStore } from '@/Stores/useToastStore';
+import RichMessageRenderer from '@/Components/Ai/RichMessageRenderer.vue';
+import { PhArrowRight } from '@phosphor-icons/vue';
 
 const modalStore = useModalStore();
 const toastStore = useToastStore();
 
 interface Contract {
-    id: string; title: string; status: string; start_date: string; end_date: string;
+    id: string; title: string; status: string; start_date: string; end_date: string; body: string;
     account: { id: string; name: string; industry: string | null; };
 }
 
@@ -77,6 +79,68 @@ const triggerAIToast = (msg: string) => {
 
 const openGenerateModal = (template: Template) => {
     modalStore.openModal('generate-contract', { template });
+};
+
+const isSaving = ref(false);
+
+const saveContract = async () => {
+    if (!selectedContract.value) return;
+    isSaving.value = true;
+    try {
+        await axios.put(`/api/legal/contracts/${selectedContract.value.id}`, {
+            body: selectedContract.value.body
+        });
+        toastStore.addToast('success', 'Contract saved successfully.');
+    } catch (error) {
+        console.error(error);
+        toastStore.addToast('error', 'Failed to save contract.');
+    } finally {
+        isSaving.value = false;
+    }
+};
+
+// Legal Agent Chat logic
+const chatMessage = ref('');
+const chatMessages = ref<{ role: string; content: string }>([
+    {
+        role: 'assistant',
+        content: 'I am LEXOR AI. How can I help you draft contracts or review compliance?'
+    }
+]);
+const isChatTyping = ref(false);
+const chatScrollContainer = ref<HTMLElement | null>(null);
+
+const scrollToBottom = () => {
+    setTimeout(() => {
+        if (chatScrollContainer.value) {
+            chatScrollContainer.value.scrollTop = chatScrollContainer.value.scrollHeight;
+        }
+    }, 50);
+};
+
+const sendChatMessage = async () => {
+    if (!chatMessage.value.trim() || isChatTyping.value) return;
+    
+    const userMsg = chatMessage.value;
+    chatMessages.value.push({ role: 'user', content: userMsg });
+    chatMessage.value = '';
+    isChatTyping.value = true;
+    scrollToBottom();
+    
+    try {
+        const response = await axios.post('/api/agents/legal-agent/chat', {
+            message: userMsg
+        });
+        chatMessages.value.push({ role: 'assistant', content: response.data.response_text });
+    } catch (e) {
+        chatMessages.value.push({ 
+            role: 'assistant', 
+            content: 'Agent is currently offline. Please ensure the AI service is running.' 
+        });
+    } finally {
+        isChatTyping.value = false;
+        scrollToBottom();
+    }
 };
 
 onMounted(() => {
@@ -180,9 +244,13 @@ onMounted(() => {
                                 <PhRobot :size="16" weight="fill" /> AI Analysis
                             </button>
                         </div>
-                        <div class="flex-1 bg-[#F1F5F9] flex items-center justify-center text-text-disabled flex-col gap-3">
-                            <PhFileDoc :size="48" weight="thin" />
-                            <span class="text-[14px]">Document Content Viewer Instance Mounts Here</span>
+                        <div class="flex-1 bg-[#F1F5F9] p-4 flex flex-col relative">
+                            <textarea v-model="selectedContract.body" class="w-full h-full bg-white border border-shell-border rounded-lg p-6 text-[14px] font-serif resize-none focus:outline-none focus:border-dept-legal-main/50 text-text-primary shadow-sm" placeholder="Contract content is empty."></textarea>
+                            <button @click="saveContract" class="absolute bottom-8 right-8 px-5 py-2.5 bg-dept-legal-main text-white text-[13px] font-bold rounded-btn flex items-center gap-2 hover:bg-[#5B21B6] transition-colors shadow-md z-10" :disabled="isSaving">
+                                <PhCheckCircle :size="18" weight="fill" v-if="!isSaving" />
+                                <svg v-else class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                {{ isSaving ? 'Saving...' : 'Save Contract' }}
+                            </button>
                         </div>
                     </div>
                     <div v-else class="h-full flex items-center justify-center text-text-disabled flex-col">
@@ -326,7 +394,43 @@ onMounted(() => {
                 </div>
 
             </div>
+        <!-- Right AI Sidebar: LEXOR AI -->
+        <div class="w-[300px] flex-shrink-0 border-l border-shell-border bg-shell-panel flex flex-col h-full z-10">
+            <div class="h-[64px] flex items-center px-4 border-b border-shell-border bg-dept-legal-main text-white shrink-0 gap-2">
+                <PhRobot :size="20" weight="fill" />
+                <div class="flex flex-col">
+                    <span class="text-[14px] font-bold tracking-wide leading-tight">LEXOR AI</span>
+                    <span class="text-[10px] text-white/70 uppercase font-semibold">Legal Assistant</span>
+                </div>
+            </div>
+            
+            <div class="flex-1 p-4 overflow-y-auto text-[12px] flex flex-col gap-3 bg-white" ref="chatScrollContainer">
+                <div v-for="(m, idx) in chatMessages" :key="idx" :class="m.role === 'user' ? 'text-right' : 'text-left'">
+                    <div class="inline-block p-3 rounded-card shadow-sm text-text-secondary max-w-[95%] leading-relaxed text-left" 
+                         :class="m.role === 'user' ? 'bg-dept-legal-main/10 text-dept-legal-main border border-dept-legal-main/20 rounded-br-none' : 'bg-shell-panel border border-shell-border rounded-bl-none'">
+                        <RichMessageRenderer :content="m.content" />
+                    </div>
+                </div>
+                <div v-if="isChatTyping" class="text-[11px] text-text-disabled animate-pulse flex items-center gap-1.5 pl-1">
+                    <PhRobot :size="14" class="animate-bounce text-dept-legal-main" /> LEXOR is typing...
+                </div>
+            </div>
 
+            <div class="p-3 border-t border-shell-border bg-shell-panel shrink-0">
+                <div class="relative">
+                    <input 
+                        v-model="chatMessage"
+                        @keyup.enter="sendChatMessage"
+                        type="text" 
+                        placeholder="Ask Lexor..." 
+                        class="w-full pl-3 pr-10 py-2.5 bg-white border border-shell-border rounded-input text-[13px] focus:ring-1 focus:ring-dept-legal-main outline-none" 
+                    />
+                    <button @click="sendChatMessage" class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-dept-legal-main hover:text-[#5B21B6] transition-colors cursor-pointer bg-transparent border-0 flex items-center justify-center">
+                        <PhArrowRight :size="16" weight="bold" />
+                    </button>
+                </div>
+            </div>
+        </div>
         </div>
     </div>
 </template>

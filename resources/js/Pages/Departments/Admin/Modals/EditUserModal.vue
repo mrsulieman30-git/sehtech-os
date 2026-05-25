@@ -4,6 +4,7 @@ import axios from 'axios';
 import { PhX } from '@phosphor-icons/vue';
 
 const props = defineProps<{
+    user: any;
     roles: any[];
     departments: any[];
 }>();
@@ -11,16 +12,16 @@ const props = defineProps<{
 const emit = defineEmits(['close']);
 
 const form = ref({
-    name: '',
-    email: '',
-    password: '',
-    role_id: '',
-    department_id: '',
-    status: 'active',
-    job_title: '',
-    employment_type: 'full_time',
-    hire_date: new Date().toISOString().split('T')[0],
-    salary: ''
+    name: props.user.name,
+    email: props.user.email,
+    password: '', // Optional - only changed if provided
+    role_id: props.user.role_id || '',
+    department_id: props.user.department_id || '',
+    status: props.user.status || 'active',
+    job_title: props.user.employee_profile?.job_title || '',
+    employment_type: props.user.employee_profile?.employment_type || 'full_time',
+    hire_date: props.user.employee_profile?.hire_date ? new Date(props.user.employee_profile.hire_date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+    salary: props.user.employee_profile?.salary || ''
 });
 
 const isSubmitting = ref(false);
@@ -31,13 +32,13 @@ const submitUser = async () => {
     error.value = '';
     
     try {
-        await axios.post('/api/admin/users', form.value);
+        await axios.put(`/api/admin/users/${props.user.id}`, form.value);
         window.dispatchEvent(new CustomEvent('refresh-admin-dashboard'));
         window.dispatchEvent(new CustomEvent('refresh-hr-dashboard'));
         window.dispatchEvent(new CustomEvent('refresh-finance-dashboard'));
         emit('close');
     } catch (err: any) {
-        error.value = err.response?.data?.message || 'Failed to add user';
+        error.value = err.response?.data?.message || 'Failed to update user';
     } finally {
         isSubmitting.value = false;
     }
@@ -48,8 +49,8 @@ const submitUser = async () => {
     <div class="w-[500px] bg-white rounded-modal shadow-modal border border-shell-border flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         
         <div class="h-[56px] flex items-center justify-between px-6 border-b border-shell-border bg-shell-panel shrink-0">
-            <h2 class="text-[15px] font-bold text-text-primary">Add New User</h2>
-            <button @click="$emit('close')" class="p-1.5 text-text-disabled hover:text-state-error rounded transition-colors">
+            <h2 class="text-[15px] font-bold text-text-primary">Edit User: {{ user.name }}</h2>
+            <button @click="$emit('close')" class="p-1.5 text-text-disabled hover:text-state-error rounded transition-colors bg-transparent border-0 cursor-pointer">
                 <PhX :size="18" weight="bold" />
             </button>
         </div>
@@ -61,7 +62,7 @@ const submitUser = async () => {
 
             <div class="flex flex-col gap-1">
                 <label class="text-[13px] font-semibold text-text-primary">Full Name</label>
-                <input v-model="form.name" type="text" required autofocus class="w-full px-3 py-2 bg-white border border-shell-border rounded-input text-[13px] focus:ring-1 focus:ring-dept-admin-main outline-none" />
+                <input v-model="form.name" type="text" required class="w-full px-3 py-2 bg-white border border-shell-border rounded-input text-[13px] focus:ring-1 focus:ring-dept-admin-main outline-none" />
             </div>
 
             <div class="flex flex-col gap-1">
@@ -70,14 +71,14 @@ const submitUser = async () => {
             </div>
 
             <div class="flex flex-col gap-1">
-                <label class="text-[13px] font-semibold text-text-primary">Temporary Password</label>
-                <input v-model="form.password" type="password" required minlength="8" class="w-full px-3 py-2 bg-white border border-shell-border rounded-input text-[13px] focus:ring-1 focus:ring-dept-admin-main outline-none" />
+                <label class="text-[13px] font-semibold text-text-primary">New Password <span class="text-text-disabled font-normal">(Leave blank to keep current)</span></label>
+                <input v-model="form.password" type="password" minlength="8" class="w-full px-3 py-2 bg-white border border-shell-border rounded-input text-[13px] focus:ring-1 focus:ring-dept-admin-main outline-none" placeholder="••••••••" />
             </div>
 
             <div class="grid grid-cols-2 gap-4">
                 <div class="flex flex-col gap-1">
                     <label class="text-[13px] font-semibold text-text-primary">System Role</label>
-                    <select v-model="form.role_id" class="w-full px-3 py-2 bg-white border border-shell-border rounded-input text-[13px] focus:ring-1 focus:ring-dept-admin-main outline-none">
+                    <select v-model="form.role_id" class="w-full px-3 py-2 bg-white border border-shell-border rounded-input text-[13px] focus:ring-1 focus:ring-dept-admin-main outline-none bg-white">
                         <option value="">— Select Role —</option>
                         <option v-for="r in roles" :key="r.id" :value="r.id">{{ r.name }}</option>
                     </select>
@@ -85,7 +86,7 @@ const submitUser = async () => {
 
                 <div class="flex flex-col gap-1">
                     <label class="text-[13px] font-semibold text-text-primary">Department</label>
-                    <select v-model="form.department_id" class="w-full px-3 py-2 bg-white border border-shell-border rounded-input text-[13px] focus:ring-1 focus:ring-dept-admin-main outline-none">
+                    <select v-model="form.department_id" class="w-full px-3 py-2 bg-white border border-shell-border rounded-input text-[13px] focus:ring-1 focus:ring-dept-admin-main outline-none bg-white">
                         <option value="">— Select Dept —</option>
                         <option v-for="d in departments" :key="d.id" :value="d.id">{{ d.name }}</option>
                     </select>
@@ -122,7 +123,7 @@ const submitUser = async () => {
 
             <div class="flex flex-col gap-1">
                 <label class="text-[13px] font-semibold text-text-primary">Account Status</label>
-                <select v-model="form.status" class="w-full px-3 py-2 bg-white border border-shell-border rounded-input text-[13px] focus:ring-1 focus:ring-dept-admin-main outline-none">
+                <select v-model="form.status" class="w-full px-3 py-2 bg-white border border-shell-border rounded-input text-[13px] focus:ring-1 focus:ring-dept-admin-main outline-none bg-white">
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
                     <option value="suspended">Suspended</option>
@@ -130,9 +131,9 @@ const submitUser = async () => {
             </div>
 
             <div class="mt-4 flex items-center justify-end gap-3 pt-4 border-t border-shell-border">
-                <button type="button" @click="$emit('close')" class="px-4 py-2 text-[13px] font-medium text-text-secondary hover:text-text-primary transition-colors">Cancel</button>
-                <button type="submit" :disabled="isSubmitting" class="px-5 py-2 bg-dept-admin-main text-white text-[13px] font-medium rounded-btn hover:bg-[#0F172A] transition-colors disabled:opacity-50">
-                    {{ isSubmitting ? 'Saving...' : 'Add User' }}
+                <button type="button" @click="$emit('close')" class="px-4 py-2 text-[13px] font-medium text-text-secondary hover:text-text-primary transition-colors bg-transparent border-0 cursor-pointer">Cancel</button>
+                <button type="submit" :disabled="isSubmitting" class="px-5 py-2 bg-dept-admin-main text-white text-[13px] font-medium rounded-btn hover:bg-[#0F172A] transition-colors disabled:opacity-50 border-0 cursor-pointer">
+                    {{ isSubmitting ? 'Saving...' : 'Save Changes' }}
                 </button>
             </div>
         </form>

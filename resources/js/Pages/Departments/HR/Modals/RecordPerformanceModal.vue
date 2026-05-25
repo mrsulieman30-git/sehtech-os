@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import axios from 'axios';
-import { PhX, PhStar, PhStarFill } from '@phosphor-icons/vue';
+import { PhX, PhStar } from '@phosphor-icons/vue';
 import { useToastStore } from '@/Stores/useToastStore';
 
 const props = defineProps<{ userId: string; userName?: string }>();
@@ -51,7 +51,7 @@ const submit = async () => {
         <!-- Header -->
         <div class="h-[56px] px-6 border-b border-shell-border flex items-center justify-between shrink-0 bg-gradient-to-r from-amber-500 to-orange-400">
             <div class="flex items-center gap-2 text-white">
-                <PhStarFill :size="20" />
+                <PhStar :size="20" weight="fill" />
                 <h3 class="text-[15px] font-bold">Performance Review</h3>
             </div>
             <button @click="$emit('close')" class="w-8 h-8 flex items-center justify-center rounded-btn hover:bg-white/20 text-white transition-colors border-0 bg-transparent cursor-pointer">
@@ -74,7 +74,7 @@ const submit = async () => {
                 <label class="block text-[12px] font-bold text-text-secondary uppercase mb-1">Rating *</label>
                 <div class="flex gap-1">
                     <button v-for="s in 5" :key="s" @click="setRating(s)" class="bg-transparent border-0 cursor-pointer p-0.5 transition-transform hover:scale-110">
-                        <component :is="s <= form.rating ? PhStarFill : PhStar" :size="28" :class="s <= form.rating ? 'text-amber-400' : 'text-slate-300'" />
+                        <PhStar :size="28" :weight="s <= form.rating ? 'fill' : 'regular'" :class="s <= form.rating ? 'text-amber-400' : 'text-slate-300'" />
                     </button>
                 </div>
             </div>

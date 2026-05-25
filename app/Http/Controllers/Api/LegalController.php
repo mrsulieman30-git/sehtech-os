@@ -55,7 +55,7 @@ class LegalController extends Controller
             }
         }
 
-        $response = Http::withToken(env('PYTHON_SERVICE_SECRET', 'secret_token_123'))->post('http://localhost:8001/api/agent/chat', [
+        $response = Http::timeout(120)->withToken(env('PYTHON_SERVICE_SECRET', 'secret_token_123'))->post('http://localhost:8001/api/agent/chat', [
             'agent_id' => 'legal',
             'message' => 'Please generate the document based on the requirements.',
             'context_chunks' => [],
@@ -78,7 +78,8 @@ class LegalController extends Controller
             'status' => 'draft',
             'start_date' => now(),
             'end_date' => now()->addYear(),
-            'created_by' => Auth::id()
+            'created_by' => Auth::id(),
+            'body' => $generatedText
         ]);
         
         // In a real system, you would save $generatedText to a file and link it via file_id.
@@ -105,5 +106,20 @@ class LegalController extends Controller
         $risk = RiskRegister::create($data);
 
         return response()->json(['message' => 'Risk recorded successfully', 'risk' => $risk]);
+    }
+
+    public function updateContract(Request $request, $id)
+    {
+        $contract = Contract::findOrFail($id);
+        
+        $data = $request->validate([
+            'body' => 'nullable|string',
+            'status' => 'nullable|string',
+            'title' => 'nullable|string'
+        ]);
+
+        $contract->update($data);
+
+        return response()->json(['message' => 'Contract updated successfully', 'contract' => $contract]);
     }
 }

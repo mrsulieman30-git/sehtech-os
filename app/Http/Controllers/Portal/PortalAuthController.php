@@ -22,6 +22,8 @@ class PortalAuthController extends Controller
             'password' => ['required'],
         ]);
 
+        $credentials['email'] = strtolower($credentials['email']);
+
         // Attempt login using the 'portal' guard (defined in auth.php)
         if (Auth::guard('portal')->attempt($credentials)) {
             $request->session()->regenerate();
