@@ -149,6 +149,9 @@ Route::middleware(['auth'])->group(function () {
 
     Route::prefix('api/support')->group(function () {
         Route::get('/dashboard', [\App\Http\Controllers\Api\SupportController::class, 'getDashboard'])->name('api.support.dashboard');
+        Route::post('/tickets', [\App\Http\Controllers\Api\SupportController::class, 'createTicket'])->name('api.support.tickets.create');
+        Route::post('/incidents', [\App\Http\Controllers\Api\SupportController::class, 'createIncident'])->name('api.support.incidents.create');
+        Route::post('/kb-articles', [\App\Http\Controllers\Api\SupportController::class, 'createKbArticle'])->name('api.support.kb.create');
         Route::post('/tickets/{id}/resolve', [\App\Http\Controllers\Api\SupportController::class, 'resolveTicket'])->name('api.support.tickets.resolve');
         Route::post('/tickets/{id}/escalate', [\App\Http\Controllers\Api\SupportController::class, 'escalateTicket'])->name('api.support.tickets.escalate');
     });

@@ -215,10 +215,10 @@ onUnmounted(() => {
                     {{ activeTab === 'kb' ? 'Knowledge Base' : activeTab.replace('-', ' ') }}
                 </h2>
                 <div class="flex gap-2 flex-shrink-0">
-                    <button v-if="activeTab === 'tickets'" class="px-3 lg:px-4 py-1.5 bg-dept-support-main text-white text-[12px] lg:text-[13px] font-medium rounded-btn hover:opacity-90 transition-colors shadow-sm border-0 cursor-pointer whitespace-nowrap">
+                    <button v-if="activeTab === 'tickets'" @click="modalStore.openModal('new-ticket')" class="px-3 lg:px-4 py-1.5 bg-dept-support-main text-white text-[12px] lg:text-[13px] font-medium rounded-btn hover:opacity-90 transition-colors shadow-sm border-0 cursor-pointer whitespace-nowrap">
                         + New Ticket
                     </button>
-                    <button v-if="activeTab === 'incidents'" class="px-3 lg:px-4 py-1.5 bg-red-600 text-white text-[12px] lg:text-[13px] font-medium rounded-btn hover:bg-red-700 transition-colors shadow-sm border-0 cursor-pointer whitespace-nowrap flex items-center gap-1.5">
+                    <button v-if="activeTab === 'incidents'" @click="modalStore.openModal('declare-outage')" class="px-3 lg:px-4 py-1.5 bg-red-600 text-white text-[12px] lg:text-[13px] font-medium rounded-btn hover:bg-red-700 transition-colors shadow-sm border-0 cursor-pointer whitespace-nowrap flex items-center gap-1.5">
                         <PhWarningCircle /> Declare Outage
                     </button>
                 </div>
@@ -459,7 +459,7 @@ onUnmounted(() => {
                             <input type="text" placeholder="Search knowledge base articles, manuals..." class="w-full pl-10 pr-4 py-2 border border-shell-border rounded-input text-[13px] outline-none focus:ring-1 focus:ring-dept-support-main" />
                             <PhFiles class="absolute left-3 top-1/2 -translate-y-1/2 text-text-disabled" :size="18" />
                         </div>
-                        <button class="px-4 py-2 bg-dept-support-main text-white font-bold text-[13px] rounded-btn shadow-sm border-0 cursor-pointer">
+                        <button @click="modalStore.openModal('create-kb-article')" class="px-4 py-2 bg-dept-support-main text-white font-bold text-[13px] rounded-btn shadow-sm border-0 cursor-pointer">
                             + Create Article
                         </button>
                     </div>

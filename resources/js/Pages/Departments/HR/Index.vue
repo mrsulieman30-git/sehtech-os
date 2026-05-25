@@ -451,8 +451,6 @@ onUnmounted(() => {
             </div>
         </div>
 
-        </div>
-
         <!-- Right Sidebar (AI) -->
         <div 
             class="fixed inset-0 z-50 bg-white flex flex-col transition-transform duration-300 lg:relative lg:inset-auto lg:z-10 lg:w-[320px] lg:flex-shrink-0 lg:translate-x-0"

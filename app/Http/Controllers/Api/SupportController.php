@@ -48,6 +48,88 @@ class SupportController extends Controller
         ]);
     }
 
+    public function createTicket(Request $request)
+    {
+        $validated = $request->validate([
+            'title' => 'required|string|max:255',
+            'description' => 'required|string',
+            'priority' => 'required|string',
+            'category' => 'required|string',
+        ]);
+
+        $ticket = Ticket::create([
+            'ticket_number' => 'TCK-' . strtoupper(uniqid()),
+            'title' => $validated['title'],
+            'description' => $validated['description'],
+            'priority' => $validated['priority'],
+            'category' => $validated['category'],
+            'status' => 'open',
+            'client_id' => null, // Assuming internal for now
+            'assigned_to' => null,
+            'source_channel' => 'portal',
+            'sla_due_date' => now()->addHours(24),
+        ]);
+
+        SupportAuditLog::create([
+            'user_id' => \Illuminate\Support\Facades\Auth::id() ?? null,
+            'action' => 'created_ticket',
+            'entity_type' => 'ticket',
+            'entity_id' => $ticket->id,
+        ]);
+
+        return response()->json(['message' => 'Ticket created successfully', 'ticket' => $ticket], 201);
+    }
+
+    public function createIncident(Request $request)
+    {
+        $validated = $request->validate([
+            'title' => 'required|string|max:255',
+            'severity' => 'required|string',
+            'affected_services' => 'required|string',
+            'description' => 'required|string',
+        ]);
+
+        $incident = SupportIncident::create([
+            'incident_number' => 'INC-' . strtoupper(uniqid()),
+            'title' => $validated['title'],
+            'severity' => $validated['severity'],
+            'status' => 'investigating',
+            'affected_services' => collect(explode(',', $validated['affected_services']))->map(fn($s) => trim($s))->toArray(),
+        ]);
+
+        SupportAuditLog::create([
+            'user_id' => \Illuminate\Support\Facades\Auth::id() ?? null,
+            'action' => 'declared_incident',
+            'entity_type' => 'incident',
+            'entity_id' => $incident->id,
+            'metadata' => ['description' => $validated['description']]
+        ]);
+
+        return response()->json(['message' => 'Outage declared successfully', 'incident' => $incident], 201);
+    }
+
+    public function createKbArticle(Request $request)
+    {
+        $validated = $request->validate([
+            'title' => 'required|string|max:255',
+            'category' => 'required|string',
+            'content' => 'required|string',
+            'access_level' => 'required|string',
+        ]);
+
+        $article = KbArticle::create([
+            'title' => $validated['title'],
+            'slug' => \Illuminate\Support\Str::slug($validated['title']) . '-' . uniqid(),
+            'category' => $validated['category'],
+            'content' => $validated['content'],
+            'access_level' => $validated['access_level'],
+            'is_published' => true,
+            'author_id' => \Illuminate\Support\Facades\Auth::id() ?? null,
+        ]);
+
+        return response()->json(['message' => 'Knowledge base article created', 'article' => $article], 201);
+    }
+
     public function resolveTicket(Request $request, $id)
     {
         $ticket = Ticket::findOrFail($id);
