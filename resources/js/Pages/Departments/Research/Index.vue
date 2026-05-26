@@ -10,11 +10,13 @@ import {
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { useModalStore } from '@/Stores/useModalStore';
+import { useToastStore } from '@/Stores/useToastStore';
 import RichTextEditor from '@/Components/OS/RichTextEditor.vue';
 import RichMessageRenderer from '@/Components/Ai/RichMessageRenderer.vue';
 import _ from 'lodash';
 
 const modalStore = useModalStore();
+const toastStore = useToastStore();
 
 dayjs.extend(relativeTime);
 
@@ -119,25 +121,32 @@ const submitVote = async (type: 'up' | 'down') => {
 
 const convertToProject = async () => {
     if (!selectedIdea.value) return;
-    if (!confirm('Are you sure you want to convert this approved idea into a Project?')) return;
     
-    try {
-        const response = await axios.post(`/api/research/ideas/${selectedIdea.value.id}/convert`);
-        selectedIdea.value.status = response.data.idea.status;
-        const idx = ideas.value.findIndex(i => i.id === selectedIdea.value!.id);
-        if (idx > -1) ideas.value[idx].status = response.data.idea.status;
-        
-        alert(`Success! Project "${response.data.project.name}" created.`);
-        // Note: You could redirect to the project page here:
-        // window.location.href = `/development/projects/${response.data.project.id}`;
-    } catch (error) {
-        console.error('Failed to convert idea to project', error);
-        alert('Failed to convert to project. Please check if it is approved.');
-    }
+    modalStore.openModal('confirm-action', {
+        title: 'Convert to Project',
+        message: 'Are you sure you want to convert this approved idea into a Project?',
+        confirmText: 'Convert',
+        danger: false,
+        onConfirm: async () => {
+            try {
+                const response = await axios.post(`/api/research/ideas/${selectedIdea.value.id}/convert`);
+                selectedIdea.value.status = response.data.idea.status;
+                const idx = ideas.value.findIndex(i => i.id === selectedIdea.value!.id);
+                if (idx > -1) ideas.value[idx].status = response.data.idea.status;
+                
+                toastStore.addToast('success', `Success! Project "${response.data.project.name}" created.`);
+                // Note: You could redirect to the project page here:
+                // window.location.href = `/development/projects/${response.data.project.id}`;
+            } catch (error) {
+                console.error('Failed to convert idea to project', error);
+                toastStore.addToast('error', 'Failed to convert to project. Please check if it is approved.');
+            }
+        }
+    });
 };
 
 const triggerAIToast = (msg: string) => {
-    alert(`Research ARIA: ${msg}`);
+    toastStore.addToast('info', `Research ARIA: ${msg}`);
 };
 
 // Research Agent Chat logic

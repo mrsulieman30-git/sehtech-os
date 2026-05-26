@@ -33,7 +33,7 @@ class AdminController extends Controller
         $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
-            'password' => 'required|string|min:8',
+            'password' => 'nullable|string|min:8',
             'status' => 'required|in:active,inactive,suspended',
             'role_id' => 'nullable|uuid|exists:roles,id',
             'department_id' => 'nullable|uuid|exists:departments,id',
@@ -43,10 +43,12 @@ class AdminController extends Controller
             'salary' => 'nullable|numeric|min:0',
         ]);
 
+        $defaultPassword = $request->password ?? 'Welcome@' . date('Y');
+
         $user = User::create([
             'name' => $request->name,
             'email' => $request->email,
-            'password' => Hash::make($request->password),
+            'password' => $defaultPassword,
             'status' => $request->status,
             'role_id' => $request->role_id,
             'department_id' => $request->department_id,
@@ -58,16 +60,23 @@ class AdminController extends Controller
             $roleName = $user->role->name ?? 'Employee';
             \App\Models\EmployeeProfile::create([
                 'user_id' => $user->id,
-                'job_title' => $request->job_title ?? $roleName,
-                'employment_type' => $request->employment_type ?? 'full_time',
-                'hire_date' => $request->hire_date ?? now()->format('Y-m-d'),
-                'salary' => $request->salary ?? 0,
+                'job_title' => empty($request->job_title) ? $roleName : $request->job_title,
+                'employment_type' => empty($request->employment_type) ? 'full_time' : $request->employment_type,
+                'hire_date' => empty($request->hire_date) ? now()->format('Y-m-d') : $request->hire_date,
+                'salary' => empty($request->salary) ? 0 : $request->salary,
                 'annual_leave_balance' => 21,
                 'sick_leave_balance' => 14,
             ]);
         }
 
-        return response()->json(['message' => 'User created successfully', 'user' => $user]);
+        return response()->json([
+            'message' => 'User created successfully', 
+            'user' => $user,
+            'credentials' => [
+                'email' => $user->email,
+                'default_password' => $defaultPassword
+            ]
+        ]);
     }
 
     public function update(Request $request, $id)
@@ -105,7 +114,7 @@ class AdminController extends Controller
         ];
 
         if ($request->filled('password')) {
-            $updateData['password'] = Hash::make($request->password);
+            $updateData['password'] = $request->password;
         }
 
         $user->update($updateData);
@@ -118,10 +127,10 @@ class AdminController extends Controller
             
             if (!$profile->exists) {
                 $profile->fill([
-                    'job_title' => $request->job_title ?? $roleName,
-                    'employment_type' => $request->employment_type ?? 'full_time',
-                    'hire_date' => $request->hire_date ?? now()->format('Y-m-d'),
-                    'salary' => $request->salary ?? 0,
+                    'job_title' => empty($request->job_title) ? $roleName : $request->job_title,
+                    'employment_type' => empty($request->employment_type) ? 'full_time' : $request->employment_type,
+                    'hire_date' => empty($request->hire_date) ? now()->format('Y-m-d') : $request->hire_date,
+                    'salary' => empty($request->salary) ? 0 : $request->salary,
                     'annual_leave_balance' => 21,
                     'sick_leave_balance' => 14,
                 ]);

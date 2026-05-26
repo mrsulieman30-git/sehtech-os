@@ -6,11 +6,18 @@ use App\Http\Controllers\Controller;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\ProjectNode;
+use App\Models\EntityAccessGrant;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class DevelopmentController extends Controller
 {
+    private function isAdmin(): bool
+    {
+        $user = Auth::user();
+        return $user->role && ($user->role->name === 'admin' || $user->role->name === 'manager' || $user->role->is_super_admin);
+    }
+
     public function getBoardData(Request $request)
     {
         $user = Auth::user();
@@ -22,7 +29,7 @@ class DevelopmentController extends Controller
             }
         ]);
 
-        if (!$user->role || ($user->role->name !== 'admin' && $user->role->name !== 'manager' && !$user->role->is_super_admin)) {
+        if (!$this->isAdmin()) {
             $query->where(function ($q) use ($user) {
                 $q->where('manager_id', $user->id)
                   ->orWhereHas('tasks.assignees', function ($sq) use ($user) {
@@ -32,6 +39,21 @@ class DevelopmentController extends Controller
         }
 
         $projects = $query->get();
+
+        // Apply RBAC filtering for non-admin users
+        if (!$this->isAdmin()) {
+            foreach ($projects as $project) {
+                // Filter nodes: remove restricted nodes the user is not granted access to
+                $project->setRelation('nodes', $project->nodes->filter(function ($node) use ($user) {
+                    return EntityAccessGrant::isUserAllowed(ProjectNode::class, $node->id, $user->id);
+                })->values());
+
+                // Filter tasks: remove restricted tasks the user is not granted access to
+                $project->setRelation('tasks', $project->tasks->filter(function ($task) use ($user) {
+                    return EntityAccessGrant::isUserAllowed(Task::class, $task->id, $user->id);
+                })->values());
+            }
+        }
 
         return response()->json([
             'projects' => $projects
@@ -275,5 +297,63 @@ class DevelopmentController extends Controller
             'message' => 'Comment added',
             'comment' => $comment->load('user:id,name,avatar')
         ]);
+    }
+
+    public function deleteTask($id)
+    {
+        $task = Task::findOrFail($id);
+        // Also delete associated access grants
+        EntityAccessGrant::where('entity_type', Task::class)->where('entity_id', $task->id)->delete();
+        $task->delete();
+        return response()->json(['message' => 'Task deleted successfully']);
+    }
+
+    // ── RBAC: Entity Access Grants ──────────────────────────────────────
+
+    public function getGrants(Request $request)
+    {
+        $request->validate([
+            'entity_id' => 'required|uuid',
+            'entity_type' => 'required|in:task,node',
+        ]);
+
+        $entityType = $request->entity_type === 'task' ? Task::class : ProjectNode::class;
+
+        $grants = EntityAccessGrant::where('entity_type', $entityType)
+            ->where('entity_id', $request->entity_id)
+            ->with('user:id,name,email,avatar')
+            ->get();
+
+        return response()->json(['grants' => $grants]);
+    }
+
+    public function syncGrants(Request $request)
+    {
+        $request->validate([
+            'entity_id' => 'required|uuid',
+            'entity_type' => 'required|in:task,node',
+            'user_ids' => 'present|array',
+            'user_ids.*' => 'exists:users,id',
+        ]);
+
+        $entityType = $request->entity_type === 'task' ? Task::class : ProjectNode::class;
+
+        // Delete existing grants for this entity
+        EntityAccessGrant::where('entity_type', $entityType)
+            ->where('entity_id', $request->entity_id)
+            ->delete();
+
+        // If user_ids is empty, this removes all restrictions (open to everyone)
+        if (!empty($request->user_ids)) {
+            foreach ($request->user_ids as $userId) {
+                EntityAccessGrant::create([
+                    'entity_id' => $request->entity_id,
+                    'entity_type' => $entityType,
+                    'user_id' => $userId,
+                ]);
+            }
+        }
+
+        return response()->json(['message' => 'Access grants updated successfully']);
     }
 }

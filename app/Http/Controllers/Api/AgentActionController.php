@@ -33,6 +33,8 @@ class AgentActionController extends Controller
                     return $this->createEmployee($payload);
                 case 'terminate_employee':
                     return $this->terminateEmployee($payload);
+                case 'create_dev_task':
+                    return $this->createDevTask($payload);
                 default:
                     return response()->json(['error' => "Action '{$action}' is not supported."], 400);
             }
@@ -109,6 +111,72 @@ class AgentActionController extends Controller
         return response()->json([
             'message' => "Employee {$user->name} has been successfully terminated.",
             'user_id' => $user->id
+        ]);
+    }
+
+    private function createDevTask($payload)
+    {
+        $targetProject = $payload['target_project'] ?? $payload['project_id'] ?? null;
+        $targetFolder = $payload['target_folder'] ?? $payload['node_id'] ?? null;
+        $title = $payload['title'] ?? null;
+        
+        if (!$targetProject) throw new \Exception("target_project is required.");
+        if (!$title) throw new \Exception("title is required.");
+        
+        // Resolve Project
+        $project = \Illuminate\Support\Facades\DB::table('projects')
+            ->where('id', $targetProject)
+            ->orWhere('name', 'ILIKE', "%{$targetProject}%")
+            ->first();
+            
+        if (!$project) {
+            throw new \Exception("Project matching '{$targetProject}' not found.");
+        }
+        $projectId = $project->id;
+        
+        // Resolve or Create Node (Folder)
+        $nodeId = null;
+        if ($targetFolder) {
+            $node = \Illuminate\Support\Facades\DB::table('project_nodes')
+                ->where('project_id', $projectId)
+                ->where(function($q) use ($targetFolder) {
+                    $q->where('id', $targetFolder)
+                      ->orWhere('name', 'ILIKE', "%{$targetFolder}%");
+                })
+                ->first();
+                
+            if ($node) {
+                $nodeId = $node->id;
+            } else {
+                // Auto-create the folder
+                $nodeId = (string) Str::uuid();
+                \Illuminate\Support\Facades\DB::table('project_nodes')->insert([
+                    'id' => $nodeId,
+                    'project_id' => $projectId,
+                    'name' => $targetFolder,
+                    'type' => 'folder',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+        }
+
+        $taskId = (string) Str::uuid();
+        \Illuminate\Support\Facades\DB::table('tasks')->insert([
+            'id' => $taskId,
+            'project_id' => $projectId,
+            'node_id' => $nodeId,
+            'title' => $title,
+            'description' => $payload['description'] ?? '',
+            'status' => $payload['status'] ?? 'todo',
+            'priority' => $payload['priority'] ?? 'medium',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        
+        return response()->json([
+            'message' => "Task '{$title}' created successfully.",
+            'task_id' => $taskId
         ]);
     }
 }

@@ -4,7 +4,7 @@ import axios from 'axios';
 import { VueDraggable } from 'vue-draggable-plus';
 import { 
     PhFolder, PhCaretRight, PhCaretDown, PhClock, 
-    PhChatCircle, PhPaperclip, PhRobot, PhPlus, PhKanban, PhTrash
+    PhChatCircle, PhPaperclip, PhRobot, PhPlus, PhKanban, PhTrash, PhShieldCheck
 } from '@phosphor-icons/vue';
 import dayjs from 'dayjs';
 import { useModalStore } from '@/Stores/useModalStore';
@@ -61,13 +61,24 @@ const boardTasks = reactive<Record<string, Task[]>>(
     Object.fromEntries(columns.map(col => [col.id, []]))
 );
 
+const getDescendantNodeIds = (nodeId: string, allNodes: any[]): string[] => {
+    const ids = [nodeId];
+    const children = allNodes.filter(n => n.parent_id === nodeId);
+    for (const child of children) {
+        ids.push(...getDescendantNodeIds(child.id, allNodes));
+    }
+    return ids;
+};
+
 const populateBoard = () => {
     const proj = projects.value.find(p => p.id === activeProjectId.value);
     let tasks = proj ? proj.tasks : [];
     if (activeNodeId.value) {
-        tasks = tasks.filter(t => t.node_id === activeNodeId.value);
+        // Get all descendant node IDs so folder selection shows all nested tasks
+        const allNodes = proj?.nodes || [];
+        const relevantIds = getDescendantNodeIds(activeNodeId.value, allNodes);
+        tasks = tasks.filter(t => relevantIds.includes(t.node_id));
     } else {
-        // If no node is selected, show no tasks (or all tasks, depending on preference. Let's show empty if they haven't selected a board)
         tasks = [];
     }
     columns.forEach(col => {
@@ -291,7 +302,7 @@ const sendChatMessage = async () => {
     scrollToBottom();
     
     try {
-        const response = await axios.post('/api/agents/development-agent/chat', {
+        const response = await axios.post('/api/agents/dev-agent/chat', {
             message: userMsg
         });
         chatMessages.value.push({ role: 'assistant', content: response.data.response_text });
@@ -314,6 +325,52 @@ onMounted(() => {
 onUnmounted(() => {
     window.removeEventListener('refresh-dev-board', handleBoardRefresh);
 });
+
+// Task Right-Click Context Menu
+const taskContextMenu = ref({ visible: false, x: 0, y: 0, task: null as Task | null });
+
+const onTaskContextMenu = (e: MouseEvent, task: Task) => {
+    e.preventDefault();
+    e.stopPropagation();
+    taskContextMenu.value = { visible: true, x: e.clientX, y: e.clientY, task };
+    const closeHandler = () => {
+        taskContextMenu.value.visible = false;
+        document.removeEventListener('click', closeHandler);
+    };
+    setTimeout(() => document.addEventListener('click', closeHandler), 10);
+};
+
+const openTaskRbac = () => {
+    if (!taskContextMenu.value.task) return;
+    taskContextMenu.value.visible = false;
+    modalStore.openModal('rbac-manage', {
+        entityId: taskContextMenu.value.task.id,
+        entityType: 'task',
+        entityName: taskContextMenu.value.task.title
+    });
+};
+
+const deleteTask = async () => {
+    if (!taskContextMenu.value.task) return;
+    const task = taskContextMenu.value.task;
+    taskContextMenu.value.visible = false;
+    
+    modalStore.openModal('confirm-action', {
+        title: 'Delete Task',
+        message: `Are you sure you want to delete "${task.title}"? This action cannot be undone.`,
+        confirmText: 'Delete Task',
+        danger: true,
+        onConfirm: async () => {
+            try {
+                await axios.delete(`/api/development/tasks/${task.id}`);
+                toastStore.addToast('success', 'Task deleted');
+                await fetchBoardData();
+            } catch (e) {
+                toastStore.addToast('error', 'Failed to delete task');
+            }
+        }
+    });
+};
 </script>
 
 <template>
@@ -439,6 +496,7 @@ onUnmounted(() => {
                                     :key="task.id"
                                     :data-task-id="task.id"
                                     @click="canEditTask(task) ? openTask(task) : null"
+                                    @contextmenu.prevent="(e: MouseEvent) => onTaskContextMenu(e, task)"
                                     class="p-3 rounded-card shadow-sm transition-all relative overflow-hidden flex flex-col gap-2"
                                     :class="[
                                         col.bg,
@@ -529,4 +587,39 @@ onUnmounted(() => {
         </div>
 
     </div>
+
+    <!-- Task Right-Click Context Menu -->
+    <Teleport to="body">
+        <div 
+            v-if="taskContextMenu.visible"
+            class="fixed z-[9999] min-w-[200px] bg-white border border-shell-border rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.12)] py-1.5 animate-in fade-in zoom-in-95 duration-150 overflow-hidden"
+            :style="{ top: taskContextMenu.y + 'px', left: taskContextMenu.x + 'px' }"
+        >
+            <button 
+                @click.stop="() => { if (taskContextMenu.task) openTask(taskContextMenu.task); taskContextMenu.visible = false; }"
+                class="w-full flex items-center gap-2.5 px-4 py-2 text-[13px] text-text-primary hover:bg-slate-50 transition-colors"
+            >
+                <PhKanban :size="16" weight="bold" class="text-teal-500" />
+                View Details
+            </button>
+            <div v-if="canManage" class="mx-3 my-1 border-t border-shell-border"></div>
+            <button 
+                v-if="canManage"
+                @click.stop="openTaskRbac"
+                class="w-full flex items-center gap-2.5 px-4 py-2 text-[13px] text-text-primary hover:bg-violet-50 transition-colors"
+            >
+                <PhShieldCheck :size="16" weight="bold" class="text-violet-500" />
+                Manage Access (RBAC)
+            </button>
+            <div v-if="canManage" class="mx-3 my-1 border-t border-shell-border"></div>
+            <button 
+                v-if="canManage"
+                @click.stop="deleteTask"
+                class="w-full flex items-center gap-2.5 px-4 py-2 text-[13px] text-red-600 hover:bg-red-50 transition-colors"
+            >
+                <PhTrash :size="16" weight="bold" />
+                Delete Task
+            </button>
+        </div>
+    </Teleport>
 </template>

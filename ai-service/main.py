@@ -243,12 +243,12 @@ class AgentServiceHandler(BaseHTTPRequestHandler):
                         "properties": {
                             "action": {
                                 "type": "string",
-                                "description": "The action to execute (e.g., 'create_employee', 'terminate_employee')",
-                                "enum": ["create_employee", "terminate_employee"]
+                                "description": "The action to execute (e.g., 'create_employee', 'terminate_employee', 'create_dev_task')",
+                                "enum": ["create_employee", "terminate_employee", "create_dev_task"]
                             },
                             "payload": {
                                 "type": "string",
-                                "description": "JSON string containing the payload for the action. For create_employee: {name, email, department, job_title, salary}. For terminate_employee: {email}."
+                                "description": "JSON string containing the payload for the action. For create_employee: {name, email, department, job_title, salary}. For terminate_employee: {email}. For create_dev_task: {target_project (ID or name), target_folder (ID or name, optional, auto-created if missing), title, description, priority, status}."
                             }
                         },
                         "required": ["action", "payload"]

@@ -54,8 +54,28 @@ Route::middleware(['auth'])->group(function () {
 
     Route::prefix('api/files')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\FileController::class, 'index'])->name('api.files.index');
+        
+        // Chunked Upload Routes
+        Route::get('/upload/status', [\App\Http\Controllers\Api\FileController::class, 'chunkStatus'])->name('api.files.chunk.status');
+        Route::post('/upload/chunk', [\App\Http\Controllers\Api\FileController::class, 'uploadChunk'])->name('api.files.chunk.upload');
+        Route::post('/upload/complete', [\App\Http\Controllers\Api\FileController::class, 'uploadComplete'])->name('api.files.chunk.complete');
+        
+        // Legacy single upload (keeping for fallback if needed)
         Route::post('/upload', [\App\Http\Controllers\Api\FileController::class, 'upload'])->name('api.files.upload');
-        Route::get('/{id}/preview', [\App\Http\Controllers\Api\FileController::class, 'preview'])->name('api.files.preview');
+        
+        // File Operations
+        Route::post('/copy', [\App\Http\Controllers\Api\FileController::class, 'copyItem'])->name('api.files.copy');
+        Route::post('/move', [\App\Http\Controllers\Api\FileController::class, 'moveItem'])->name('api.files.move');
+        Route::delete('/delete', [\App\Http\Controllers\Api\FileController::class, 'deleteItem'])->name('api.files.delete');
+        
+        // Trash Operations
+        Route::get('/trash', [\App\Http\Controllers\Api\FileController::class, 'getTrash'])->name('api.files.trash.get');
+        Route::post('/trash/{id}/restore', [\App\Http\Controllers\Api\FileController::class, 'restoreTrash'])->name('api.files.trash.restore');
+        
+        Route::post('/folders', [\App\Http\Controllers\Api\FileController::class, 'createFolder'])->name('api.files.folders.create');
+        Route::get('/preview', [\App\Http\Controllers\Api\FileController::class, 'preview'])->name('api.files.preview');
+        Route::get('/access', [\App\Http\Controllers\Api\FileController::class, 'getAccess'])->name('api.files.access.get');
+        Route::post('/access', [\App\Http\Controllers\Api\FileController::class, 'setAccess'])->name('api.files.access.set');
     });
 
     Route::prefix('api/research')->group(function () {
@@ -74,11 +94,27 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/tasks', [\App\Http\Controllers\Api\DevelopmentController::class, 'storeTask'])->name('api.dev.task.store');
         Route::put('/tasks/{id}', [\App\Http\Controllers\Api\DevelopmentController::class, 'updateTask'])->name('api.dev.tasks.update');
         Route::post('/tasks/{id}/comments', [\App\Http\Controllers\Api\DevelopmentController::class, 'addComment'])->name('api.dev.tasks.comments');
+        Route::delete('/tasks/{id}', [\App\Http\Controllers\Api\DevelopmentController::class, 'deleteTask'])->name('api.dev.tasks.delete');
         Route::post('/projects', [\App\Http\Controllers\Api\DevelopmentController::class, 'storeProject'])->name('api.dev.projects.store');
         Route::post('/projects/merge', [\App\Http\Controllers\Api\DevelopmentController::class, 'mergeProject'])->name('api.dev.projects.merge');
         Route::post('/projects/{id}/nodes', [\App\Http\Controllers\Api\DevelopmentController::class, 'storeNode'])->name('api.dev.projects.nodes.store');
         Route::put('/nodes/{id}/move', [\App\Http\Controllers\Api\DevelopmentController::class, 'moveNode'])->name('api.dev.nodes.move');
         Route::delete('/nodes/{id}', [\App\Http\Controllers\Api\DevelopmentController::class, 'deleteNode'])->name('api.dev.nodes.delete');
+        Route::get('/grants', [\App\Http\Controllers\Api\DevelopmentController::class, 'getGrants'])->name('api.dev.grants');
+        Route::post('/grants/sync', [\App\Http\Controllers\Api\DevelopmentController::class, 'syncGrants'])->name('api.dev.grants.sync');
+    });
+
+    Route::prefix('api/ide')->group(function () {
+        Route::get('/url', function () {
+            $user = \Illuminate\Support\Facades\Auth::user();
+            
+            // Provide the root directory as the default folder
+            $query = '?folder=/home/coder/project';
+
+            return response()->json([
+                'url' => 'http://localhost:8080' . $query
+            ]);
+        })->name('api.ide.url');
     });
 
     // Marketing Department
@@ -189,5 +225,14 @@ Route::middleware(['auth'])->group(function () {
 
     Route::prefix('api/internal')->group(function () {
         Route::post('/agent-action', [\App\Http\Controllers\Api\AgentActionController::class, 'execute'])->withoutMiddleware(['auth'])->name('api.internal.agent-action');
+    });
+
+    // Notifications
+    Route::prefix('api/notifications')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\NotificationController::class, 'index'])->name('api.notifications.index');
+        Route::post('/test', [\App\Http\Controllers\Api\NotificationController::class, 'testNotification'])->name('api.notifications.test');
+        Route::post('/read-all', [\App\Http\Controllers\Api\NotificationController::class, 'markAllAsRead'])->name('api.notifications.read_all');
+        Route::post('/{id}/read', [\App\Http\Controllers\Api\NotificationController::class, 'markAsRead'])->name('api.notifications.read');
+        Route::delete('/{id}', [\App\Http\Controllers\Api\NotificationController::class, 'destroy'])->name('api.notifications.destroy');
     });
 });

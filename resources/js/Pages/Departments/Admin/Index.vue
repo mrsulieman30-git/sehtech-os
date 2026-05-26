@@ -6,9 +6,11 @@ import {
     PhMagnifyingGlass, PhPlus, PhDotsThree, PhGear, PhRobot, PhArrowRight
 } from '@phosphor-icons/vue';
 import { useModalStore } from '@/Stores/useModalStore';
+import { useToastStore } from '@/Stores/useToastStore';
 import RichMessageRenderer from '@/Components/Ai/RichMessageRenderer.vue';
 
 const modalStore = useModalStore();
+const toastStore = useToastStore();
 
 const activeTab = ref('users');
 const searchQuery = ref('');
@@ -19,7 +21,7 @@ const selectedRole = ref<any>(null);
 const isSavingRole = ref(false);
 
 const saveAdminSettings = () => {
-    window.alert('Settings saved successfully!');
+    toastStore.addToast('success', 'Settings saved successfully!');
 };
 
 // Admin Agent Chat logic
@@ -94,7 +96,7 @@ const openEditModal = (user: any) => {
 
 const deleteUser = async (user: any) => {
     if (user.email === 'admin@sehtech.com') {
-        window.alert('The default system administrator account cannot be deleted.');
+        toastStore.addToast('error', 'The default system administrator account cannot be deleted.');
         return;
     }
     if (confirm(`Are you sure you want to delete user ${user.name}? This will immediately revoke their access.`)) {
@@ -105,7 +107,7 @@ const deleteUser = async (user: any) => {
             window.dispatchEvent(new CustomEvent('refresh-finance-dashboard'));
         } catch (e) {
             console.error(e);
-            window.alert('Failed to delete user.');
+            toastStore.addToast('error', 'Failed to delete user.');
         }
     }
 };
@@ -130,10 +132,10 @@ const saveRole = async (role: any) => {
     isSavingRole.value = true;
     try {
         await axios.put(`/api/admin/roles/${role.id}`, { name: role.name, permissions: role.permissions });
-        window.alert('Role permissions updated successfully!');
+        toastStore.addToast('success', 'Role permissions updated successfully!');
     } catch(e) {
         console.error(e);
-        window.alert('Failed to update role.');
+        toastStore.addToast('error', 'Failed to update role.');
     } finally {
         isSavingRole.value = false;
     }

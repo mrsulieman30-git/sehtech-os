@@ -38,6 +38,8 @@ const modals: Record<string, any> = {
     'create-crm-deal': defineAsyncComponent(() => import('@/Pages/Departments/Sales/Modals/CreateCrmDealModal.vue')),
     'view-deal': defineAsyncComponent(() => import('@/Pages/Departments/Sales/Modals/ViewDealModal.vue')),
     'create-crm-content': defineAsyncComponent(() => import('@/Pages/Departments/Marketing/Modals/CreateCrmContentModal.vue')),
+    'rbac-manage': defineAsyncComponent(() => import('@/Pages/Departments/Development/Modals/RbacModal.vue')),
+    'confirm-action': defineAsyncComponent(() => import('@/Components/OS/ConfirmModal.vue')),
 };
 
 const currentModalComponent = computed(() => {

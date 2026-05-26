@@ -151,7 +151,7 @@ class HrController extends Controller
             $userData = [
                 'name' => $request->name,
                 'email' => $request->email,
-                'password' => Hash::make($defaultPassword),
+                'password' => $defaultPassword,
                 'department_id' => $request->department_id,
                 'role_id' => $request->role_id,
                 'status' => 'active',

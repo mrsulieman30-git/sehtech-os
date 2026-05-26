@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import axios from 'axios';
-import { PhFolder, PhKanban, PhCaretRight, PhCaretDown, PhPlus, PhTrash } from '@phosphor-icons/vue';
+import { PhFolder, PhKanban, PhCaretRight, PhCaretDown, PhPlus, PhTrash, PhShieldCheck } from '@phosphor-icons/vue';
 
 import { useModalStore } from '@/Stores/useModalStore';
 import { useToastStore } from '@/Stores/useToastStore';
@@ -21,10 +21,34 @@ const toastStore = useToastStore();
 const auth = usePage().props.auth as any;
 
 const canManage = computed(() => {
-    return auth.user?.role === 'admin' || auth.user?.role === 'manager';
+    return auth.user?.role?.name === 'admin' || auth.user?.role?.name === 'manager' || auth.user?.role?.is_super_admin;
 });
 
 const isExpanded = ref(false);
+
+// Context Menu state
+const contextMenu = ref({ visible: false, x: 0, y: 0 });
+
+const onContextMenu = (e: MouseEvent) => {
+    if (!canManage.value) return;
+    e.preventDefault();
+    e.stopPropagation();
+    contextMenu.value = { visible: true, x: e.clientX, y: e.clientY };
+    const closeHandler = () => {
+        contextMenu.value.visible = false;
+        document.removeEventListener('click', closeHandler);
+    };
+    setTimeout(() => document.addEventListener('click', closeHandler), 10);
+};
+
+const openRbacModal = () => {
+    contextMenu.value.visible = false;
+    modalStore.openModal('rbac-manage', {
+        entityId: props.node.id,
+        entityType: 'node',
+        entityName: props.node.name
+    });
+};
 
 const children = computed(() => {
     return props.allNodes.filter(n => n.parent_id === props.node.id).sort((a, b) => {
@@ -37,6 +61,7 @@ const children = computed(() => {
 const toggleExpand = () => {
     if (props.node.type === 'folder') {
         isExpanded.value = !isExpanded.value;
+        emit('select-board', props.node.id);
     } else {
         emit('select-board', props.node.id);
     }
@@ -51,13 +76,21 @@ const handleAddNode = (type: 'folder' | 'board') => {
 };
 
 const handleDelete = async () => {
-    if (!confirm('Are you sure you want to delete this?')) return;
-    try {
-        await axios.delete(`/api/development/nodes/${props.node.id}`);
-        emit('refresh');
-    } catch (e) {
-        toastStore.addToast('error', 'Failed to delete folder');
-    }
+    modalStore.openModal('confirm-action', {
+        title: 'Delete Node',
+        message: 'Are you sure you want to delete this? This action cannot be undone and will delete all nested items.',
+        confirmText: 'Delete',
+        danger: true,
+        onConfirm: async () => {
+            try {
+                await axios.delete(`/api/development/nodes/${props.node.id}`);
+                emit('refresh');
+                toastStore.addToast('success', 'Deleted successfully');
+            } catch (e) {
+                toastStore.addToast('error', 'Failed to delete');
+            }
+        }
+    });
 };
 
 const onSelectBoard = (id: string) => {
@@ -120,6 +153,7 @@ const onDrop = async (e: DragEvent) => {
     <div>
         <div 
             @click="toggleExpand"
+            @contextmenu="onContextMenu"
             :draggable="canManage"
             @dragstart="onDragStart"
             @dragover="onDragOver"
@@ -161,6 +195,52 @@ const onDrop = async (e: DragEvent) => {
                 </button>
             </div>
         </div>
+
+        <!-- Right-Click Context Menu -->
+        <Teleport to="body">
+            <div 
+                v-if="contextMenu.visible"
+                class="fixed z-[9999] min-w-[200px] bg-white border border-shell-border rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.12)] py-1.5 animate-in fade-in zoom-in-95 duration-150 overflow-hidden"
+                :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }"
+            >
+                <button 
+                    v-if="node.type === 'folder'"
+                    @click.stop="() => { contextMenu.visible = false; handleAddNode('folder'); }"
+                    class="w-full flex items-center gap-2.5 px-4 py-2 text-[13px] text-text-primary hover:bg-slate-50 transition-colors"
+                >
+                    <PhFolder :size="16" weight="bold" class="text-dept-dev-main" />
+                    New Subfolder
+                </button>
+                <button 
+                    v-if="node.type === 'folder'"
+                    @click.stop="() => { contextMenu.visible = false; handleAddNode('board'); }"
+                    class="w-full flex items-center gap-2.5 px-4 py-2 text-[13px] text-text-primary hover:bg-slate-50 transition-colors"
+                >
+                    <PhKanban :size="16" weight="bold" class="text-teal-500" />
+                    New Task Board
+                </button>
+                
+                <div class="mx-3 my-1 border-t border-shell-border"></div>
+                
+                <button 
+                    @click.stop="openRbacModal"
+                    class="w-full flex items-center gap-2.5 px-4 py-2 text-[13px] text-text-primary hover:bg-violet-50 transition-colors"
+                >
+                    <PhShieldCheck :size="16" weight="bold" class="text-violet-500" />
+                    Manage Access (RBAC)
+                </button>
+
+                <div class="mx-3 my-1 border-t border-shell-border"></div>
+
+                <button 
+                    @click.stop="() => { contextMenu.visible = false; handleDelete(); }"
+                    class="w-full flex items-center gap-2.5 px-4 py-2 text-[13px] text-red-600 hover:bg-red-50 transition-colors"
+                >
+                    <PhTrash :size="16" weight="bold" />
+                    Delete
+                </button>
+            </div>
+        </Teleport>
 
         <!-- Recursive Children -->
         <div v-if="node.type === 'folder' && isExpanded" class="flex flex-col gap-0.5">

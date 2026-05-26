@@ -7,6 +7,7 @@ export const AppRegistry: Record<string, any> = {
     'forms': defineAsyncComponent(() => import('@/Pages/Modules/FormsBuilder/Index.vue')),
     'calendar': defineAsyncComponent(() => import('@/Pages/Modules/Calendar/Index.vue')),
     'agents': defineAsyncComponent(() => import('@/Pages/Modules/Agents/ControlRoom.vue')),
+    'ide': defineAsyncComponent(() => import('@/Pages/Modules/Ide/Index.vue')),
     
     // Departments
     'admin': defineAsyncComponent(() => import('@/Pages/Departments/Admin/Index.vue')),

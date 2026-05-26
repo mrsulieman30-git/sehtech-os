@@ -25,34 +25,86 @@ class AgentController extends Controller
         ];
     }
 
-    private function getRealTimeContext()
+    private function getRealTimeContext($agentSlug = null)
     {
         $employeeCount = \App\Models\User::where('status', 'active')->whereHas('employeeProfile')->count();
-        $totalPayroll = \App\Models\EmployeeProfile::whereHas('user', function($q) {
-            $q->where('status', 'active');
-        })->sum('salary');
         $departmentCount = \App\Models\Department::count();
         
-        $totalRevenue = 0;
-        if (\Illuminate\Support\Facades\Schema::hasTable('crm_deals')) {
-            $totalRevenue = \Illuminate\Support\Facades\DB::table('crm_deals')->where('stage', 'won')->sum('value');
-        }
+        $user = Auth::user();
+        $roleName = strtolower($user->role ? $user->role->name : '');
+        $isSuperAdmin = $user->role ? $user->role->is_super_admin : false;
+        
+        $canViewFinancials = ($isSuperAdmin || in_array($roleName, ['admin', 'finance', 'hr'])) 
+            && in_array($agentSlug, ['master', 'finance-agent', 'hr-agent']);
 
         $context = "\n\n--- CURRENT SYSTEM LIVE DATA (USE THIS WHEN ANSWERING) ---\n";
-        $context .= "- Total Onboarded Employees: {$employeeCount}\n";
-        $context .= "- Total Departments: {$departmentCount}\n";
-        $context .= "- Total Annual Payroll: \$" . number_format($totalPayroll, 2) . "\n";
-        $context .= "- Total Won Deals Revenue: \$" . number_format($totalRevenue, 2) . "\n";
-        
-        $context .= "\n--- EMPLOYEE DIRECTORY (Active, Max 50) ---\n";
-        $employees = \App\Models\User::where('status', 'active')->whereHas('employeeProfile')->with(['department', 'employeeProfile'])->limit(50)->get();
-        foreach ($employees as $emp) {
-            $deptName = $emp->department ? $emp->department->name : 'N/A';
-            $jobTitle = $emp->employeeProfile ? $emp->employeeProfile->job_title : 'N/A';
-            $context .= "- {$emp->name} ({$emp->email}), Dept: {$deptName}, Title: {$jobTitle}\n";
+
+        // General HR and System data
+        if (in_array($agentSlug, ['master', 'hr-agent', 'finance-agent'])) {
+            $context .= "- Total Onboarded Employees: {$employeeCount}\n";
+            $context .= "- Total Departments: {$departmentCount}\n";
+
+            if ($canViewFinancials) {
+                $totalPayroll = \App\Models\EmployeeProfile::whereHas('user', function($q) {
+                    $q->where('status', 'active');
+                })->sum('salary');
+                
+                $totalRevenue = 0;
+                if (\Illuminate\Support\Facades\Schema::hasTable('crm_deals')) {
+                    $totalRevenue = \Illuminate\Support\Facades\DB::table('crm_deals')->where('stage', 'won')->sum('value');
+                }
+                $context .= "- Total Annual Payroll: \$" . number_format($totalPayroll, 2) . "\n";
+                $context .= "- Total Won Deals Revenue: \$" . number_format($totalRevenue, 2) . "\n";
+            }
+            
+            $context .= "\n--- EMPLOYEE DIRECTORY (Active, Max 50) ---\n";
+            $employees = \App\Models\User::where('status', 'active')->whereHas('employeeProfile')->with(['department', 'employeeProfile'])->limit(50)->get();
+            foreach ($employees as $emp) {
+                $deptName = $emp->department ? $emp->department->name : 'N/A';
+                $jobTitle = $emp->employeeProfile ? $emp->employeeProfile->job_title : 'N/A';
+                $context .= "- {$emp->name} ({$emp->email}), Dept: {$deptName}, Title: {$jobTitle}\n";
+            }
+            
+            $context .= "\nNote: Do not invent numbers or names. Use the exact data provided above.\n";
         }
         
-        $context .= "\nNote: Do not invent numbers or names. Use the exact data provided above.\n";
+        if (in_array($agentSlug, ['master', 'research-agent'])) {
+            if (\Illuminate\Support\Facades\Schema::hasTable('research_ideas')) {
+                $ideas = \Illuminate\Support\Facades\DB::table('research_ideas')->latest()->limit(20)->get();
+                if ($ideas->count() > 0) {
+                    $context .= "\n--- RECENT RESEARCH IDEAS (Posted by team) ---\n";
+                    foreach($ideas as $idea) {
+                        $context .= "- Idea: {$idea->title} | Status: {$idea->status} | Description: {$idea->description}\n";
+                    }
+                }
+            }
+        }
+        
+        if (in_array($agentSlug, ['master', 'dev-agent'])) {
+            if (\Illuminate\Support\Facades\Schema::hasTable('projects')) {
+                $projects = \Illuminate\Support\Facades\DB::table('projects')->get();
+                if ($projects->count() > 0) {
+                    $context .= "\n--- DEVELOPMENT PROJECTS & FOLDERS ---\n";
+                    foreach($projects as $project) {
+                        $context .= "- Project: {$project->name} (ID: {$project->id})\n";
+                        $nodes = \Illuminate\Support\Facades\DB::table('project_nodes')->where('project_id', $project->id)->get();
+                        foreach($nodes as $node) {
+                            $context .= "  - Node: {$node->name} | Type: {$node->type} | ID: {$node->id}\n";
+                        }
+                    }
+                }
+                
+                $tasks = \Illuminate\Support\Facades\DB::table('tasks')->get();
+                $context .= "\n- Total Tasks: {$tasks->count()}\n";
+                if ($tasks->count() > 0) {
+                    $context .= "\n--- DEVELOPMENT TASKS ---\n";
+                    foreach($tasks as $task) {
+                        $context .= "- Task: {$task->title} | Status: {$task->status} | Priority: {$task->priority} | Node ID: {$task->node_id}\n";
+                    }
+                }
+            }
+        }
+
         $context .= "\n### UI RENDERING INSTRUCTIONS ###\n";
         $context .= "You can render interactive widgets using special HTML tags. Always use them when displaying data:\n";
         $context .= "1. Department Links: `<dept-link slug=\"hr\">HR Department</dept-link>`. (Slugs: hr, finance, it, marketing, sales)\n";
@@ -79,11 +131,14 @@ class AgentController extends Controller
             ->first()?->messages ?? [];
 
         $agentPrompt = $agent->system_prompt . "\nIMPORTANT RULES:\n1. You have full read access to all data. You are allowed to modify data (add/remove) ONLY IF the user explicitly commands you to do so. Use the `execute_system_action` tool for this. Do not ask for permission if they already commanded it. Disregard any past messages where you stated you cannot modify data; you NOW HAVE this capability.\n2. You must always use the available widgets when showing data.\n";
+        if ($agent->slug === 'research-agent') {
+            $agentPrompt .= "3. ALWAYS proactively suggest at least one new, innovative research idea or project improvement at the end of your response based on current context, even if you were not explicitly ordered to do so.\n";
+        }
         
         $historyToSend = $history;
         $historyToSend[] = [
             'role' => 'system',
-            'content' => "CRITICAL LIVE DATA UPDATE: The data in the chat history might be outdated. ALWAYS use this fresh real-time data for your next response:\n" . $this->getRealTimeContext()
+            'content' => "CRITICAL LIVE DATA UPDATE: The data in the chat history might be outdated. ALWAYS use this fresh real-time data for your next response:\n" . $this->getRealTimeContext($agent->slug)
         ];
 
         $response = Http::timeout(120)->withToken(config('services.python.secret'))
@@ -122,7 +177,7 @@ class AgentController extends Controller
         $master = AiAgent::where('slug', 'master')->first();
         $subAgents = AiAgent::where('slug', '!=', 'master')->get(['slug', 'name', 'description', 'system_prompt']);
         
-        $realTimeContext = $this->getRealTimeContext();
+        $realTimeContext = $this->getRealTimeContext('master');
         
         $mappedSubAgents = $subAgents->map(function ($sub) use ($realTimeContext) {
             return [
