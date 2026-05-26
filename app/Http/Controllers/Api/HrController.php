@@ -140,6 +140,7 @@ class HrController extends Controller
             'emergency_relationship' => 'nullable|string|max:100',
             'draft_contract' => 'nullable|boolean',
             'hardware_bundle' => 'nullable|boolean',
+            'avatar' => 'nullable|image|max:2048',
         ]);
 
         $result = DB::transaction(function () use ($request) {
@@ -147,7 +148,7 @@ class HrController extends Controller
             $defaultPassword = 'Welcome@' . date('Y');
 
             // 1. Create the system User account
-            $user = User::create([
+            $userData = [
                 'name' => $request->name,
                 'email' => $request->email,
                 'password' => Hash::make($defaultPassword),
@@ -155,7 +156,13 @@ class HrController extends Controller
                 'role_id' => $request->role_id,
                 'status' => 'active',
                 'created_by' => Auth::id(),
-            ]);
+            ];
+
+            if ($request->hasFile('avatar')) {
+                $userData['avatar'] = '/storage/' . $request->file('avatar')->store('avatars', 'public');
+            }
+
+            $user = User::create($userData);
 
             // 2. Create the EmployeeProfile
             $bankDetails = null;
@@ -436,6 +443,7 @@ class HrController extends Controller
             'emergency_name' => 'nullable|string|max:255',
             'emergency_phone' => 'nullable|string|max:50',
             'emergency_relationship' => 'nullable|string|max:100',
+            'avatar' => 'nullable|image|max:2048',
         ]);
 
         DB::transaction(function () use ($request, $user, $profile) {
@@ -444,7 +452,13 @@ class HrController extends Controller
                 'email' => strtolower($request->email),
                 'department_id' => $request->department_id,
                 'role_id' => $request->role_id,
-            ]);
+            ];
+
+            if ($request->hasFile('avatar')) {
+                $userData['avatar'] = '/storage/' . $request->file('avatar')->store('avatars', 'public');
+            }
+
+            $user->update($userData);
 
             $bankDetails = $profile->bank_details ?? [];
             if ($request->filled('bank_name') || $request->filled('bank_account')) {

@@ -13,12 +13,22 @@ const chatHistory = ref([
 ]);
 
 const isTyping = ref(false);
+const chatContainer = ref<HTMLElement | null>(null);
+
+const scrollToBottom = () => {
+    nextTick(() => {
+        if (chatContainer.value) {
+            chatContainer.value.scrollTop = chatContainer.value.scrollHeight;
+        }
+    });
+};
 
 const fetchHistory = async () => {
     try {
         const response = await axios.get('/api/agents/master-chat/history');
         if (response.data.history && response.data.history.length > 0) {
             chatHistory.value = response.data.history;
+            scrollToBottom();
         }
     } catch (error) {
         console.error('Failed to load chat history', error);
@@ -27,6 +37,7 @@ const fetchHistory = async () => {
 
 onMounted(() => {
     fetchHistory();
+    scrollToBottom();
 });
 
 
@@ -38,6 +49,7 @@ const sendMessage = async () => {
     const userMessage = message.value;
     message.value = '';
     isTyping.value = true;
+    scrollToBottom();
     
     try {
         const response = await axios.post('/api/agents/master-chat', {
@@ -45,11 +57,13 @@ const sendMessage = async () => {
             history: chatHistory.value.slice(0, -1) // Send all history except the latest message
         });
         chatHistory.value.push({ role: 'assistant', content: response.data.response_text });
+        scrollToBottom();
     } catch (error: any) {
         chatHistory.value.push({ 
             role: 'assistant', 
             content: 'SYSTEM ERROR: Connection to Python Universal Backend failed. Ensure the FastApi service is running on port 8001.' 
         });
+        scrollToBottom();
         console.error(error);
     } finally {
         isTyping.value = false;
@@ -108,7 +122,7 @@ const sendMessage = async () => {
 
         <div class="flex-1 flex flex-col h-full bg-[#F8FAFC] overflow-hidden">
             
-            <div class="flex-1 overflow-y-auto p-6 flex flex-col gap-4">
+            <div ref="chatContainer" class="flex-1 overflow-y-auto p-6 flex flex-col gap-4">
                 <div 
                     v-for="(msg, index) in chatHistory" 
                     :key="index" 
@@ -137,7 +151,7 @@ const sendMessage = async () => {
                 <div class="max-w-4xl mx-auto relative">
                     <textarea 
                         v-model="message"
-                        @keydown.enter.prevent="sendMessage"
+                        @keydown.enter.exact.prevent="sendMessage"
                         rows="2" 
                         placeholder="Command the Master Agent..." 
                         class="w-full pl-4 pr-12 py-3 bg-[#F8FAFC] border border-shell-border rounded-card text-[14px] focus:ring-1 focus:ring-dept-ai-main outline-none resize-none shadow-sm"

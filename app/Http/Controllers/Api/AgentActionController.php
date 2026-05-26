@@ -104,6 +104,7 @@ class AgentActionController extends Controller
         }
 
         $user->update(['status' => 'inactive']);
+        $user->delete();
         
         return response()->json([
             'message' => "Employee {$user->name} has been successfully terminated.",

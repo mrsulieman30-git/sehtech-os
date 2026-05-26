@@ -12,6 +12,21 @@ const step = ref(1); // 1=Personal, 2=Job, 3=Financial, 4=Emergency
 const isSubmitting = ref(false);
 const loading = ref(true);
 
+const avatarFile = ref<File | null>(null);
+const avatarPreview = ref<string | null>(null);
+
+const handleAvatarChange = (e: Event) => {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (file) {
+        avatarFile.value = file;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            avatarPreview.value = e.target?.result as string;
+        };
+        reader.readAsDataURL(file);
+    }
+};
+
 const departments = ref<any[]>([]);
 const roles = ref<any[]>([]);
 const managers = ref<any[]>([]);
@@ -56,6 +71,10 @@ onMounted(async () => {
         const bank = profile.bank_details || {};
         const emergency = profile.emergency_contact || {};
 
+        if (user.avatar) {
+            avatarPreview.value = user.avatar;
+        }
+
         form.value = {
             name: user.name,
             email: user.email,
@@ -95,7 +114,22 @@ const submit = async () => {
     if (isSubmitting.value) return;
     isSubmitting.value = true;
     try {
-        await axios.put(`/api/hr/employees/${props.userId}`, form.value);
+        const formData = new FormData();
+        formData.append('_method', 'PUT'); // Need to use POST with _method=PUT for file uploads in Laravel
+        Object.keys(form.value).forEach(key => {
+            const val = (form.value as any)[key];
+            if (val === true) formData.append(key, '1');
+            else if (val === false) formData.append(key, '0');
+            else if (val !== null && val !== '') formData.append(key, val);
+        });
+
+        if (avatarFile.value) {
+            formData.append('avatar', avatarFile.value);
+        }
+
+        await axios.post(`/api/hr/employees/${props.userId}`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
         window.dispatchEvent(new CustomEvent('refresh-hr-dashboard'));
         window.dispatchEvent(new CustomEvent('refresh-finance-dashboard'));
         toastStore.showToast(`${form.value.name} has been updated successfully!`, 'success');
@@ -147,6 +181,17 @@ const stepLabels = ['Personal Info', 'Job Details', 'Financial & IDs', 'Emergenc
 
                 <!-- Step 1: Personal Info -->
                 <div v-if="step === 1" class="space-y-4 animate-in fade-in duration-200">
+                    <div class="flex items-center gap-4 mb-4">
+                        <div class="w-16 h-16 rounded-full bg-shell-panel border border-shell-border overflow-hidden flex items-center justify-center shrink-0">
+                            <img v-if="avatarPreview" :src="avatarPreview" class="w-full h-full object-cover" />
+                            <PhIdentificationBadge v-else :size="24" class="text-text-disabled" />
+                        </div>
+                        <div>
+                            <label class="block text-[12px] font-bold text-text-secondary uppercase mb-1">Profile Picture</label>
+                            <input type="file" accept="image/*" @change="handleAvatarChange" class="block w-full text-[12px] text-text-secondary file:mr-3 file:py-1.5 file:px-3 file:rounded-btn file:border-0 file:text-[11px] file:font-semibold file:bg-dept-hr-main/10 file:text-dept-hr-main hover:file:bg-dept-hr-main/20 transition-colors cursor-pointer" />
+                        </div>
+                    </div>
+
                     <div>
                         <label class="block text-[12px] font-bold text-text-secondary uppercase mb-1">Full Name *</label>
                         <input v-model="form.name" type="text" required class="w-full h-10 px-3 rounded-lg border border-shell-border text-[13px] focus:outline-none focus:border-dept-hr-main focus:ring-1 focus:ring-dept-hr-main" />

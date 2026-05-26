@@ -264,18 +264,18 @@ onUnmounted(() => {
                             <p class="text-[12px] text-text-secondary mt-1">{{ employee.job_title }}</p>
                             <span class="mt-1 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-100 text-text-disabled">{{ formatEmploymentType(employee.employment_type) }}</span>
                             
-                            <div class="mt-4 pt-3 border-t border-shell-border w-full flex justify-center gap-3">
-                                <button @click.stop="openEmployeeProfile(employee.id)" class="hover:text-dept-hr-main transition-colors text-[12px] font-medium text-text-disabled flex items-center gap-1 bg-transparent border-0 cursor-pointer">
-                                    <PhEye :size="13" /> Profile
+                            <div class="mt-4 pt-3 border-t border-shell-border w-full flex flex-wrap justify-center gap-2 lg:gap-2">
+                                <button @click.stop="openEmployeeProfile(employee.id)" class="px-2.5 py-1 bg-dept-hr-main/10 text-dept-hr-main hover:bg-dept-hr-main/20 rounded-md transition-colors text-[11px] font-bold flex items-center gap-1 border-0 cursor-pointer">
+                                    <PhEye :size="13" weight="bold" /> Profile
                                 </button>
-                                <button @click.stop="modalStore.openModal('edit-employee', { userId: employee.id })" class="hover:text-blue-500 transition-colors text-[12px] font-medium text-text-disabled flex items-center gap-1 bg-transparent border-0 cursor-pointer">
-                                    <PhPencilSimple :size="13" /> Edit
+                                <button @click.stop="modalStore.openModal('edit-employee', { userId: employee.id })" class="px-2.5 py-1 bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 rounded-md transition-colors text-[11px] font-bold flex items-center gap-1 border-0 cursor-pointer">
+                                    <PhPencilSimple :size="13" weight="bold" /> Edit
                                 </button>
-                                <button @click.stop="openPerformanceReview(employee)" class="hover:text-amber-500 transition-colors text-[12px] font-medium text-text-disabled flex items-center gap-1 bg-transparent border-0 cursor-pointer">
-                                    <PhStar :size="13" /> Review
+                                <button @click.stop="openPerformanceReview(employee)" class="px-2.5 py-1 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 rounded-md transition-colors text-[11px] font-bold flex items-center gap-1 border-0 cursor-pointer">
+                                    <PhStar :size="13" weight="bold" /> Review
                                 </button>
-                                <button @click.stop="deleteEmployee(employee)" class="hover:text-red-500 transition-colors text-[12px] font-medium text-text-disabled flex items-center gap-1 bg-transparent border-0 cursor-pointer">
-                                    <PhTrash :size="13" /> Delete
+                                <button @click.stop="deleteEmployee(employee)" class="px-2.5 py-1 bg-red-500/10 text-red-500 hover:bg-red-500/20 rounded-md transition-colors text-[11px] font-bold flex items-center gap-1 border-0 cursor-pointer">
+                                    <PhTrash :size="13" weight="bold" /> Delete
                                 </button>
                             </div>
                         </div>

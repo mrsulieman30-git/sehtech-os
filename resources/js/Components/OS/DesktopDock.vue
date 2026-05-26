@@ -221,7 +221,7 @@ const setIconRef = (el: any, index: number) => {
             @mousemove="handleMouseMove"
             @mouseenter="showDockNow"
             @mouseleave="() => { handleMouseLeave(); hideDock(); }"
-            class="flex items-end gap-2 px-3 pb-2 pt-2 bg-shell-window/90 backdrop-blur-xl border border-b-0 border-shell-border rounded-t-app shadow-dock pointer-events-auto transition-transform duration-500 ease-[cubic-bezier(0.175,0.885,0.32,1.275)] relative z-20 max-w-full overflow-x-auto overflow-y-visible"
+            class="flex flex-wrap justify-center items-end gap-2 px-3 pb-2 pt-2 bg-shell-window/90 backdrop-blur-xl border border-b-0 border-shell-border rounded-t-app shadow-dock pointer-events-auto transition-transform duration-500 ease-[cubic-bezier(0.175,0.885,0.32,1.275)] relative z-20 w-max max-w-[95vw] mx-auto"
             :class="isDockVisible ? 'translate-y-0' : 'translate-y-full'"
         >
             <div 
@@ -230,12 +230,12 @@ const setIconRef = (el: any, index: number) => {
                 :ref="(el) => setIconRef(el, index)"
                 class="relative group flex flex-col items-center justify-end pb-2 w-[52px]"
             >
-                <div class="absolute bottom-16 mb-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 min-w-[200px] bg-white border border-shell-border rounded-card shadow-modal pointer-events-auto flex flex-col overflow-hidden z-[10000]">
-                    <div class="px-3 py-2 bg-shell-panel border-b border-shell-border flex justify-between items-center">
+                <div class="absolute bottom-16 mb-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 min-w-[180px] w-max max-w-[300px] bg-white/90 backdrop-blur-xl border border-shell-border/60 rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] pointer-events-auto flex flex-col overflow-hidden z-[10000]">
+                    <div class="px-3 py-2 bg-shell-panel/80 backdrop-blur-md border-b border-shell-border/60 flex justify-between items-center">
                         <span class="text-[12px] font-bold text-text-primary">{{ app.title }}</span>
                     </div>
                     
-                    <div class="flex-1 max-h-[200px] overflow-y-auto p-1 flex flex-col gap-1">
+                    <div class="flex-1 max-h-[350px] overflow-y-auto p-1.5 flex flex-col gap-1 custom-scrollbar">
                         <div v-if="getAppWindows(app.appId).length === 0" class="px-3 py-4 text-center text-[12px] text-text-disabled">
                             No windows open
                         </div>

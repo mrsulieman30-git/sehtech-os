@@ -78,14 +78,20 @@ class AgentController extends Controller
             ->latest()
             ->first()?->messages ?? [];
 
-        $agentPrompt = $agent->system_prompt . "\nIMPORTANT RULES:\n1. You have full read access to all data. You are allowed to modify data (add/remove) ONLY IF the user explicitly commands you to do so. Use the `execute_system_action` tool for this. Do not ask for permission if they already commanded it. Disregard any past messages where you stated you cannot modify data; you NOW HAVE this capability.\n2. You must always use the available widgets when showing data.\n" . $this->getRealTimeContext();
+        $agentPrompt = $agent->system_prompt . "\nIMPORTANT RULES:\n1. You have full read access to all data. You are allowed to modify data (add/remove) ONLY IF the user explicitly commands you to do so. Use the `execute_system_action` tool for this. Do not ask for permission if they already commanded it. Disregard any past messages where you stated you cannot modify data; you NOW HAVE this capability.\n2. You must always use the available widgets when showing data.\n";
+        
+        $historyToSend = $history;
+        $historyToSend[] = [
+            'role' => 'system',
+            'content' => "CRITICAL LIVE DATA UPDATE: The data in the chat history might be outdated. ALWAYS use this fresh real-time data for your next response:\n" . $this->getRealTimeContext()
+        ];
 
         $response = Http::timeout(120)->withToken(config('services.python.secret'))
             ->post(config('services.python.url') . '/api/agent/chat', [
                 'agent_id' => $agent->id,
                 'message' => $request->message,
                 'context_chunks' => array_column($contextChunks, 'content'),
-                'conversation_history' => $history,
+                'conversation_history' => $historyToSend,
                 'system_prompt' => $agentPrompt,
                 'laravel_url' => config('app.url', 'http://127.0.0.1:8000'),
                 'ai_config' => $this->getAiProviderConfig()
@@ -127,19 +133,25 @@ class AgentController extends Controller
             ];
         })->toArray();
 
-        $masterPrompt = ($master->system_prompt ?? 'You are NEXAR...') . "\nIMPORTANT RULES:\n1. You have full read access to all data. You are allowed to modify data (add/remove) ONLY IF the user explicitly commands you to do so. Use the `execute_system_action` tool for this. Do not ask for permission if they already commanded it.\nCRITICAL: If the user asks to add, create, terminate, or remove an employee, YOU MUST execute the `execute_system_action` tool yourself. DO NOT delegate this task to any sub-agent (like the hr-agent), because sub-agents do not have execution capabilities. You must execute it directly. Disregard any past messages where you stated you cannot modify data; you NOW HAVE this capability.\n2. You must always use the available widgets when showing data.\n" . $realTimeContext;
+        $masterPrompt = ($master->system_prompt ?? 'You are NEXAR...') . "\nIMPORTANT RULES:\n1. You have full read access to all data. You are allowed to modify data (add/remove) ONLY IF the user explicitly commands you to do so. Use the `execute_system_action` tool for this. Do not ask for permission if they already commanded it.\nCRITICAL: If the user asks to add, create, terminate, or remove an employee, YOU MUST execute the `execute_system_action` tool yourself. DO NOT delegate this task to any sub-agent (like the hr-agent), because sub-agents do not have execution capabilities. You must execute it directly. Disregard any past messages where you stated you cannot modify data; you NOW HAVE this capability.\n2. You must always use the available widgets when showing data.\n";
 
         $history = AgentConversation::where('agent_id', $master->id)
             ->where('user_id', Auth::id())
             ->latest()
             ->first()?->messages ?? [];
 
+        $historyToSend = $history;
+        $historyToSend[] = [
+            'role' => 'system',
+            'content' => "CRITICAL LIVE DATA UPDATE: The data in the chat history might be outdated. ALWAYS use this fresh real-time data for your next response:\n" . $realTimeContext
+        ];
+
         $response = Http::timeout(120)->withToken(config('services.python.secret'))
             ->post(config('services.python.url') . '/api/agent/chat', [
                 'agent_id' => 'master',
                 'message' => $request->message,
                 'context_chunks' => [],
-                'conversation_history' => $history,
+                'conversation_history' => $historyToSend,
                 'system_prompt' => $masterPrompt,
                 'sub_agents' => $mappedSubAgents,
                 'laravel_url' => config('app.url', 'http://127.0.0.1:8000'),
